@@ -60,9 +60,9 @@ def root():
 
 @app.get("/health", tags=["Health"])
 def health():
-    from database import supabase
+    from database import get_supabase
     try:
-        supabase.table("users").select("id").limit(1).execute()
+        get_supabase().table("users").select("id").limit(1).execute()
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {str(e)}"

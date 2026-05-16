@@ -4,13 +4,29 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+_supabase_client: Client = None
 
-if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-    raise RuntimeError(
-        "\n\n❌  SUPABASE_URL or SUPABASE_SERVICE_KEY is missing in .env\n"
-        "    Make sure your .env file has both values set.\n"
-    )
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+def get_supabase() -> Client:
+    global _supabase_client
+    if _supabase_client is None:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_KEY")
+        if not url or not key:
+            raise RuntimeError(
+                "SUPABASE_URL or SUPABASE_SERVICE_KEY is not set. "
+                "Add them as environment variables in your Vercel project settings."
+            )
+        _supabase_client = create_client(url, key)
+    return _supabase_client
+
+
+supabase: Client = None
+
+
+class _LazySupabase:
+    def __getattr__(self, name):
+        return getattr(get_supabase(), name)
+
+
+supabase = _LazySupabase()
