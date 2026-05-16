@@ -6,9 +6,8 @@ import auth as auth_utils
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
-@router.post("/register", response_model=schemas.Token, summary="Register a new user", security=[])
+@router.post("/register", response_model=schemas.Token, summary="Register a new user")
 def register(user_data: schemas.UserRegister):
-    # Check if email already exists
     existing = supabase.table("users").select("id").eq("email", user_data.email).execute()
     if existing.data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
@@ -29,7 +28,7 @@ def register(user_data: schemas.UserRegister):
     return {"access_token": access_token, "token_type": "bearer", "user": user}
 
 
-@router.post("/login", response_model=schemas.Token, summary="Login and get JWT token", security=[])
+@router.post("/login", response_model=schemas.Token, summary="Login and get JWT token")
 def login(credentials: schemas.UserLogin):
     result = supabase.table("users").select("*").eq("email", credentials.email).execute()
     if not result.data:
@@ -51,6 +50,6 @@ def get_me(current_user: dict = Depends(auth_utils.get_current_user)):
     return current_user
 
 
-@router.post("/logout", summary="Logout", security=[])
+@router.post("/logout", summary="Logout")
 def logout():
     return {"message": "Logged out successfully. Please delete your token on the client side."}
