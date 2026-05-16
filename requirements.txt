@@ -8,3 +8,16 @@ python-multipart==0.0.9
 python-dotenv==1.0.1
 pydantic[email]==2.6.4
 email-validator==2.1.1
+bcrypt
+cryptography
+email-validator
+fastapi
+jose
+passlib
+pydantic
+python-dotenv
+python-jose
+python-multipart
+sqlalchemy
+supabase
+uvicorn

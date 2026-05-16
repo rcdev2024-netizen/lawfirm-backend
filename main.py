@@ -2,26 +2,32 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from routes import auth, appointments
+from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard
 
 load_dotenv()
 
 app = FastAPI(
-    title="Atty Rochelle Law Office API",
+    title="Law Firm Portal API",
     description="""
-## Law Office Appointment & Auth API
+## Law Firm Portal API
 
-This API powers the Atty Rochelle Cortez-Naz Law Office web application.
+Powers the full Law Firm portal — client, attorney, and admin dashboards.
 
 ### Features
-- **Authentication** – Register, login, and manage user sessions with JWT tokens.
-- **Appointments** – Book, view, update, and cancel appointment requests.
+- **Authentication** – Register, login, JWT-based session management
+- **Appointments** – Book, view, update appointments
+- **Cases** – Full case lifecycle management
+- **Documents** – Document storage and retrieval
+- **Messages** – Internal messaging between clients and attorneys
+- **Notifications** – Real-time notification feed
+- **Invoices** – Billing and invoice management
+- **Dashboard** – Aggregated stats per user role
 
 ### Authentication
-Most endpoints require a Bearer JWT token. Obtain a token via `/api/auth/login`.
-Include it in requests as: `Authorization: Bearer <token>`
+Most endpoints require a Bearer JWT token. Obtain via `/api/auth/login`.
+Include as: `Authorization: Bearer <token>`
     """,
-    version="1.0.0",
+    version="2.0.0",
     contact={
         "name": "Atty Rochelle Cortez-Naz Law Office",
         "email": "attyrochellecortez.naz@gmail.com"
@@ -29,32 +35,36 @@ Include it in requests as: `Authorization: Bearer <token>`
     license_info={"name": "Private"}
 )
 
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:4200").split(",")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(auth.router)
 app.include_router(appointments.router)
+app.include_router(cases.router)
+app.include_router(documents.router)
+app.include_router(messages.router)
+app.include_router(notifications.router)
+app.include_router(invoices.router)
+app.include_router(dashboard.router)
 
 
 @app.on_event("startup")
 def on_startup():
-    print("✅  Atty Rochelle Law Office API started.")
-    print("📄  Swagger UI: http://localhost:8000/docs")
+    print("Law Firm Portal API v2 started.")
+    print("Swagger UI: http://localhost:8000/docs")
 
 
 @app.get("/", tags=["Health"])
 def root():
     return {
-        "message": "Atty Rochelle Law Office API is running",
-        "docs": "/docs",
-        "redoc": "/redoc"
+        "message": "Law Firm Portal API is running",
+        "version": "2.0.0",
+        "docs": "/docs"
     }
 
 
@@ -69,6 +79,6 @@ def health():
 
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "supabase": db_status
     }
