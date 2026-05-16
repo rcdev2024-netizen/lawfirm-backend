@@ -1,8 +1,0 @@
-{
-  "buildCommand": "npm run build:prod",
-  "outputDirectory": "dist/atty-law-office/browser",
-  "framework": null,
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
-}
