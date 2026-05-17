@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard, roles
+from routes import clients, attorneys
 
 load_dotenv()
 
@@ -15,8 +16,10 @@ Powers the full Law Firm portal — client, attorney, and admin dashboards.
 
 ### Features
 - **Authentication** – Register, login, JWT-based session management
-- **Appointments** – Book, view, update appointments
+- **Appointments** – Book, view, update appointments (online/onsite)
 - **Cases** – Full case lifecycle management
+- **Clients** – Client management with approval workflow
+- **Attorneys** – Attorney management
 - **Documents** – Document storage and retrieval
 - **Messages** – Internal messaging between clients and attorneys
 - **Notifications** – Real-time notification feed
@@ -27,7 +30,7 @@ Powers the full Law Firm portal — client, attorney, and admin dashboards.
 Most endpoints require a Bearer JWT token. Obtain via `/api/auth/login`.
 Include as: `Authorization: Bearer <token>`
     """,
-    version="2.0.0",
+    version="2.1.0",
     contact={
         "name": "Atty Rochelle Cortez-Naz Law Firm",
         "email": "attyrochellecortez.naz@gmail.com"
@@ -52,11 +55,13 @@ app.include_router(notifications.router)
 app.include_router(invoices.router)
 app.include_router(dashboard.router)
 app.include_router(roles.router)
+app.include_router(clients.router)
+app.include_router(attorneys.router)
 
 
 @app.on_event("startup")
 def on_startup():
-    print("Law Firm Portal API v2 started.")
+    print("Law Firm Portal API v2.1 started.")
     print("Swagger UI: http://localhost:8000/docs")
 
 
@@ -64,7 +69,7 @@ def on_startup():
 def root():
     return {
         "message": "Law Firm Portal API is running",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "docs": "/docs"
     }
 
@@ -80,6 +85,6 @@ def health():
 
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "supabase": db_status
     }

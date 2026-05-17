@@ -28,6 +28,7 @@ class UserOut(BaseModel):
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
     is_active: bool
+    approval_status: Optional[str] = "approved"
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -45,6 +46,77 @@ class Token(BaseModel):
     user: UserOut
 
 
+# ── CLIENT SCHEMAS ────────────────────────────────────────────
+
+class ClientCreate(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+    phone: Optional[str] = None
+
+
+class ClientUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ClientApprovalUpdate(BaseModel):
+    approval_status: str
+
+
+class ClientOut(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    phone: Optional[str] = None
+    is_active: bool
+    approval_status: Optional[str] = "pending"
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ── ATTORNEY SCHEMAS ──────────────────────────────────────────
+
+class AttorneyCreate(BaseModel):
+    full_name: str
+    email: EmailStr
+    password: str
+    phone: Optional[str] = None
+    specialization: Optional[str] = None
+
+
+class AttorneyUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    is_active: Optional[bool] = None
+    specialization: Optional[str] = None
+
+
+class AttorneyOut(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    phone: Optional[str] = None
+    specialization: Optional[str] = None
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+# ── USER SEARCH SCHEMA ────────────────────────────────────────
+
+class UserSearchResult(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    phone: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 # ── APPOINTMENT SCHEMAS ────────────────────────────────────────
 
 class AppointmentCreate(BaseModel):
@@ -55,6 +127,7 @@ class AppointmentCreate(BaseModel):
     message: str
     preferred_date: Optional[date] = None
     preferred_time: Optional[str] = None
+    appointment_type: Optional[str] = "onsite"
 
 
 class AppointmentOut(BaseModel):
@@ -66,6 +139,7 @@ class AppointmentOut(BaseModel):
     message: str
     preferred_date: Optional[date] = None
     preferred_time: Optional[str] = None
+    appointment_type: Optional[str] = "onsite"
     status: str
     user_id: Optional[int] = None
     attorney_id: Optional[int] = None
@@ -77,6 +151,12 @@ class AppointmentOut(BaseModel):
 
 class AppointmentStatusUpdate(BaseModel):
     status: str
+    notes: Optional[str] = None
+
+
+class AppointmentAdminUpdate(BaseModel):
+    status: Optional[str] = None
+    attorney_id: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -102,6 +182,7 @@ class CaseUpdate(BaseModel):
     case_type: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None
+    client_id: Optional[int] = None
     attorney_id: Optional[int] = None
     next_hearing_date: Optional[date] = None
     next_hearing_time: Optional[str] = None
@@ -289,6 +370,7 @@ class UserRoleOut(BaseModel):
     role: Optional[str] = "client"
     phone: Optional[str] = None
     is_active: bool
+    approval_status: Optional[str] = "approved"
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
