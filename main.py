@@ -29,7 +29,7 @@ Include as: `Authorization: Bearer <token>`
     """,
     version="2.0.0",
     contact={
-        "name": "Atty Rochelle Cortez-Naz Law Office",
+        "name": "Atty Rochelle Cortez-Naz Law Firm",
         "email": "attyrochellecortez.naz@gmail.com"
     },
     license_info={"name": "Private"}
