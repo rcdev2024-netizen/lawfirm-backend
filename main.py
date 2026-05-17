@@ -3,7 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard, roles
-from routes import clients, attorneys
+from routes.clients import router as clients_router
+from routes.attorneys import router as attorneys_router
 
 load_dotenv()
 
@@ -55,8 +56,8 @@ app.include_router(notifications.router)
 app.include_router(invoices.router)
 app.include_router(dashboard.router)
 app.include_router(roles.router)
-app.include_router(clients.router)
-app.include_router(attorneys.router)
+app.include_router(clients_router)
+app.include_router(attorneys_router)
 
 
 @app.on_event("startup")

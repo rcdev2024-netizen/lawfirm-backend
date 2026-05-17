@@ -16,15 +16,20 @@ def register(user_data: schemas.UserRegister):
     role_id = auth_utils.get_role_id(role_name)
     if not role_id:
         role_id = auth_utils.get_role_id("client")
+        role_name = "client"
 
     hashed_pw = auth_utils.get_password_hash(user_data.password)
+
+    approval_status = "pending" if role_name == "client" else "approved"
+
     result = supabase.table("users").insert({
         "full_name":        user_data.full_name,
         "email":            user_data.email,
         "hashed_password":  hashed_pw,
         "phone":            user_data.phone,
         "role_id":          role_id,
-        "is_active":        True
+        "is_active":        True,
+        "approval_status":  approval_status
     }).execute()
 
     if not result.data:
@@ -56,6 +61,18 @@ def login(credentials: schemas.UserLogin):
 
     if not user.get("is_active", True):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
+
+    approval = user.get("approval_status", "approved")
+    if user.get("role") == "client" and approval == "pending":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is pending admin approval. Please wait for approval before logging in."
+        )
+    if user.get("role") == "client" and approval == "rejected":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account registration has been rejected. Please contact the office for assistance."
+        )
 
     access_token = auth_utils.create_access_token(data={"sub": user["email"]})
     return {"access_token": access_token, "token_type": "bearer", "user": user}
