@@ -30,16 +30,50 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def _normalize_user(user: dict) -> dict:
+    """
+    Flatten the joined roles row so that current_user["role"] always returns
+    the role name string (e.g. "admin", "attorney") regardless of whether the
+    data came from a join or a plain select.
+    """
+    if "roles" in user and isinstance(user["roles"], dict):
+        user["role"] = user["roles"].get("name", "client")
+        del user["roles"]
+    elif "role_id" in user and "role" not in user:
+        user["role"] = "client"
+    return user
+
+
 def _get_user_from_token(token: str) -> Optional[dict]:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if not email:
             return None
-        result = supabase.table("users").select("*").eq("email", email).execute()
-        return result.data[0] if result.data else None
+        # Join roles so we always get the role name alongside role_id
+        result = (
+            supabase.table("users")
+            .select("*, roles!users_role_id_fkey(name)")
+            .eq("email", email)
+            .execute()
+        )
+        if not result.data:
+            return None
+        return _normalize_user(result.data[0])
     except JWTError:
         return None
+
+
+def get_role_id(role_name: str) -> Optional[int]:
+    """Look up a role's primary-key id by its name slug."""
+    result = (
+        supabase.table("roles")
+        .select("id")
+        .eq("name", role_name)
+        .eq("is_active", True)
+        .execute()
+    )
+    return result.data[0]["id"] if result.data else None
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
@@ -63,3 +97,18 @@ def get_optional_user(token: str = Depends(oauth2_scheme)) -> Optional[dict]:
     if not token:
         return None
     return _get_user_from_token(token)
+
+
+def require_role(*allowed_roles: str):
+    """
+    Dependency factory — use as:
+        Depends(require_role("admin", "attorney"))
+    """
+    def _check(current_user: dict = Depends(get_current_user)) -> dict:
+        if current_user.get("role") not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access restricted to: {', '.join(allowed_roles)}"
+            )
+        return current_user
+    return _check

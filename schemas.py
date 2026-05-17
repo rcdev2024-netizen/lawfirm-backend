@@ -23,6 +23,7 @@ class UserOut(BaseModel):
     id: int
     full_name: str
     email: str
+    role_id: Optional[int] = None
     role: Optional[str] = "client"
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
@@ -230,6 +231,79 @@ class InvoiceOut(BaseModel):
 class InvoiceStatusUpdate(BaseModel):
     status: str
     paid_date: Optional[date] = None
+
+
+# ── ROLE SCHEMAS ────────────────────────────────────────────────
+
+VALID_ROLES = {"guest", "client", "paralegal", "attorney", "admin"}
+
+
+class RoleCreate(BaseModel):
+    name: str
+    display_name: str
+    description: Optional[str] = None
+
+
+class RoleUpdate(BaseModel):
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class RoleOut(BaseModel):
+    id: int
+    name: str
+    display_name: str
+    description: Optional[str] = None
+    is_system: bool
+    is_active: bool
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class RolePermissionCreate(BaseModel):
+    permission: str
+
+
+class RolePermissionOut(BaseModel):
+    id: int
+    role_name: str
+    permission: str
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class UserRoleUpdate(BaseModel):
+    role: str
+    reason: Optional[str] = None
+
+
+class UserRoleOut(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    role_id: Optional[int] = None
+    role: Optional[str] = "client"
+    phone: Optional[str] = None
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class RoleAuditOut(BaseModel):
+    id: int
+    user_id: int
+    changed_by: Optional[int] = None
+    old_role_id: Optional[int] = None
+    new_role_id: int
+    reason: Optional[str] = None
+    changed_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
 
 
 # ── DASHBOARD SCHEMAS ───────────────────────────────────────────

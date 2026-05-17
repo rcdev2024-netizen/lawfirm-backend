@@ -11,7 +11,7 @@ class User(Base):
     full_name = Column(String(255), nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
-    role = Column(String(50), default="client")
+    role_id = Column(BigInteger, ForeignKey("roles.id"), nullable=True)
     phone = Column(String(50))
     avatar_url = Column(Text)
     is_active = Column(Boolean, default=True)

@@ -12,29 +12,45 @@ def register(user_data: schemas.UserRegister):
     if existing.data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
+    role_name = user_data.role or "client"
+    role_id = auth_utils.get_role_id(role_name)
+    if not role_id:
+        role_id = auth_utils.get_role_id("client")
+
     hashed_pw = auth_utils.get_password_hash(user_data.password)
     result = supabase.table("users").insert({
-        "full_name": user_data.full_name,
-        "email": user_data.email,
-        "hashed_password": hashed_pw,
-        "is_active": True
+        "full_name":        user_data.full_name,
+        "email":            user_data.email,
+        "hashed_password":  hashed_pw,
+        "phone":            user_data.phone,
+        "role_id":          role_id,
+        "is_active":        True
     }).execute()
 
     if not result.data:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create user")
 
-    user = result.data[0]
+    user = auth_utils._normalize_user(result.data[0])
+    if "role" not in user:
+        user["role"] = role_name
+
     access_token = auth_utils.create_access_token(data={"sub": user["email"]})
     return {"access_token": access_token, "token_type": "bearer", "user": user}
 
 
 @router.post("/login", response_model=schemas.Token, summary="Login and get JWT token")
 def login(credentials: schemas.UserLogin):
-    result = supabase.table("users").select("*").eq("email", credentials.email).execute()
+    result = (
+        supabase.table("users")
+        .select("*, roles!users_role_id_fkey(name)")
+        .eq("email", credentials.email)
+        .execute()
+    )
     if not result.data:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
-    user = result.data[0]
+    user = auth_utils._normalize_user(result.data[0])
+
     if not auth_utils.verify_password(credentials.password, user["hashed_password"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 

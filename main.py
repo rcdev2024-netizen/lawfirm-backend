@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard
+from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard, roles
 
 load_dotenv()
 
@@ -51,6 +51,7 @@ app.include_router(messages.router)
 app.include_router(notifications.router)
 app.include_router(invoices.router)
 app.include_router(dashboard.router)
+app.include_router(roles.router)
 
 
 @app.on_event("startup")
