@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # ── EmailJS credentials ────────────────────────────────────────────────────────
 _EMAILJS_URL        = "https://api.emailjs.com/api/v1.0/email/send"
 _SERVICE_ID         = "service_rkqrqht"
-_TEMPLATE_ID        = "template_appointments"   # set this after creating the template
+_TEMPLATE_ID        = "template_appointments"   # ← replace with your actual EmailJS Template ID
 _PUBLIC_KEY         = "t4w0fMIgnyUuZ6qKa"
 _PRIVATE_KEY        = "fXmVgdVNsAIvccZSL8NFj"
 _ADMIN_EMAIL        = "rochellemariecortez@gmail.com"

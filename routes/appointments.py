@@ -4,6 +4,7 @@ from database import supabase
 import schemas
 import auth as auth_utils
 from services.emailjs import send_appointment_notification
+from services.textbee import send_sms_notification
 
 router = APIRouter(prefix="/api/appointments", tags=["Appointments"])
 
@@ -38,6 +39,7 @@ def create_appointment(
         )
     appt = result.data[0]
     background_tasks.add_task(send_appointment_notification, "New Booking", appt)
+    background_tasks.add_task(send_sms_notification, "New Booking", appt)
     return appt
 
 
@@ -143,6 +145,7 @@ def update_appointment_status(
     appt = result.data[0]
     label = f"Status Updated → {body.status.capitalize()}"
     background_tasks.add_task(send_appointment_notification, label, appt)
+    background_tasks.add_task(send_sms_notification, label, appt)
     return appt
 
 
@@ -188,6 +191,7 @@ def admin_update_appointment(
 
     appt = result.data[0]
     background_tasks.add_task(send_appointment_notification, "Admin Updated", appt)
+    background_tasks.add_task(send_sms_notification, "Admin Updated", appt)
     return appt
 
 
@@ -214,4 +218,5 @@ def delete_appointment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
 
     background_tasks.add_task(send_appointment_notification, "Deleted", appt)
+    background_tasks.add_task(send_sms_notification, "Deleted", appt)
     return {"message": f"Appointment {appointment_id} deleted successfully"}
