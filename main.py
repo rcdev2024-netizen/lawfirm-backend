@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard, roles
+from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard, roles, audit_logs
 from routes.clients import router as clients_router
 from routes.attorneys import router as attorneys_router
 
@@ -25,13 +25,14 @@ Powers the full Law Firm portal — client, attorney, and admin dashboards.
 - **Messages** – Internal messaging between clients and attorneys
 - **Notifications** – Real-time notification feed
 - **Invoices** – Billing and invoice management
-- **Dashboard** – Aggregated stats per user role
+- **Dashboard** – Aggregated stats, today's schedule, case overview
+- **Audit Logs** – User activity tracking
 
 ### Authentication
 Most endpoints require a Bearer JWT token. Obtain via `/api/auth/login`.
 Include as: `Authorization: Bearer <token>`
     """,
-    version="2.1.0",
+    version="2.2.0",
     contact={
         "name": "Atty Rochelle Cortez-Naz Law Firm",
         "email": "attyrochellecortez.naz@gmail.com"
@@ -58,11 +59,12 @@ app.include_router(dashboard.router)
 app.include_router(roles.router)
 app.include_router(clients_router)
 app.include_router(attorneys_router)
+app.include_router(audit_logs.router)
 
 
 @app.on_event("startup")
 def on_startup():
-    print("Law Firm Portal API v2.1 started.")
+    print("Law Firm Portal API v2.2 started.")
     print("Swagger UI: http://localhost:8000/docs")
 
 
@@ -70,7 +72,7 @@ def on_startup():
 def root():
     return {
         "message": "Law Firm Portal API is running",
-        "version": "2.1.0",
+        "version": "2.2.0",
         "docs": "/docs"
     }
 
@@ -86,6 +88,6 @@ def health():
 
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
-        "version": "2.1.0",
+        "version": "2.2.0",
         "supabase": db_status
     }

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from database import supabase
 import schemas
 import auth as auth_utils
@@ -19,7 +19,6 @@ def register(user_data: schemas.UserRegister):
         role_name = "client"
 
     hashed_pw = auth_utils.get_password_hash(user_data.password)
-
     approval_status = "pending" if role_name == "client" else "approved"
 
     result = supabase.table("users").insert({
@@ -38,6 +37,12 @@ def register(user_data: schemas.UserRegister):
     user = auth_utils._normalize_user(result.data[0])
     if "role" not in user:
         user["role"] = role_name
+
+    try:
+        from routes.audit_logs import log_action
+        log_action(user["id"], user["full_name"], "register", "user", user["id"], f"New {role_name} registered: {user['email']}")
+    except Exception:
+        pass
 
     access_token = auth_utils.create_access_token(data={"sub": user["email"]})
     return {"access_token": access_token, "token_type": "bearer", "user": user}
@@ -74,6 +79,12 @@ def login(credentials: schemas.UserLogin):
             detail="Your account registration has been rejected. Please contact the office for assistance."
         )
 
+    try:
+        from routes.audit_logs import log_action
+        log_action(user["id"], user["full_name"], "login", "user", user["id"], f"User logged in: {user['email']}")
+    except Exception:
+        pass
+
     access_token = auth_utils.create_access_token(data={"sub": user["email"]})
     return {"access_token": access_token, "token_type": "bearer", "user": user}
 
@@ -83,6 +94,33 @@ def get_me(current_user: dict = Depends(auth_utils.get_current_user)):
     return current_user
 
 
+@router.patch("/me", response_model=schemas.UserOut, summary="Update current user profile")
+def update_me(body: schemas.UserUpdate, current_user: dict = Depends(auth_utils.get_current_user)):
+    update_data = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not update_data:
+        return current_user
+
+    result = supabase.table("users").update(update_data).eq("id", current_user["id"]).execute()
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to update profile")
+
+    updated = auth_utils._normalize_user(result.data[0])
+
+    try:
+        from routes.audit_logs import log_action
+        fields = ", ".join(update_data.keys())
+        log_action(current_user["id"], current_user["full_name"], "update_profile", "user", current_user["id"], f"Updated profile fields: {fields}")
+    except Exception:
+        pass
+
+    return updated
+
+
 @router.post("/logout", summary="Logout")
-def logout():
+def logout(current_user: dict = Depends(auth_utils.get_current_user)):
+    try:
+        from routes.audit_logs import log_action
+        log_action(current_user["id"], current_user["full_name"], "logout", "user", current_user["id"], f"User logged out: {current_user['email']}")
+    except Exception:
+        pass
     return {"message": "Logged out successfully. Please delete your token on the client side."}

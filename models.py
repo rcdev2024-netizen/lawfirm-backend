@@ -114,3 +114,17 @@ class Invoice(Base):
     paid_date = Column(Date, nullable=True)
     notes = Column(Text)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
+    user_name = Column(String(255))
+    action = Column(String(100), nullable=False)
+    entity_type = Column(String(100))
+    entity_id = Column(BigInteger, nullable=True)
+    description = Column(Text)
+    ip_address = Column(String(50))
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())

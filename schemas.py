@@ -212,6 +212,37 @@ class CaseOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CaseWithNamesOut(BaseModel):
+    id: int
+    case_number: str
+    case_name: str
+    case_type: Optional[str] = None
+    description: Optional[str] = None
+    status: str
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
+    attorney_id: Optional[int] = None
+    attorney_name: Optional[str] = None
+    next_hearing_date: Optional[date] = None
+    next_hearing_time: Optional[str] = None
+    court: Optional[str] = None
+    judge: Optional[str] = None
+    filed_date: Optional[date] = None
+    closed_date: Optional[date] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PaginatedCasesOut(BaseModel):
+    items: List[CaseWithNamesOut]
+    total: int
+    page: int
+    limit: int
+    pages: int
+
+
 # ── DOCUMENT SCHEMAS ────────────────────────────────────────────
 
 class DocumentCreate(BaseModel):
@@ -276,6 +307,18 @@ class NotificationOut(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class NotificationCountOut(BaseModel):
+    unread_count: int
+
+
+class PaginatedNotificationsOut(BaseModel):
+    items: List[NotificationOut]
+    total: int
+    page: int
+    limit: int
+    pages: int
 
 
 # ── INVOICE SCHEMAS ─────────────────────────────────────────────
@@ -397,3 +440,55 @@ class DashboardStats(BaseModel):
     unpaid_invoices: int
     unread_messages: int
     unread_notifications: int
+
+
+class ScheduleAppointmentOut(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    phone: Optional[str] = None
+    practice_area: Optional[str] = None
+    preferred_date: Optional[date] = None
+    preferred_time: Optional[str] = None
+    appointment_type: Optional[str] = None
+    status: str
+    notes: Optional[str] = None
+    user_id: Optional[int] = None
+
+    model_config = {"from_attributes": True}
+
+
+class AttorneyScheduleOut(BaseModel):
+    attorney_id: Optional[int] = None
+    attorney_name: str
+    appointments: List[ScheduleAppointmentOut]
+
+
+class TodayScheduleOut(BaseModel):
+    date: str
+    schedules: List[AttorneyScheduleOut]
+    total_appointments: int
+
+
+# ── AUDIT LOG SCHEMAS ────────────────────────────────────────────
+
+class AuditLogOut(BaseModel):
+    id: int
+    user_id: Optional[int] = None
+    user_name: Optional[str] = None
+    action: str
+    entity_type: Optional[str] = None
+    entity_id: Optional[int] = None
+    description: Optional[str] = None
+    ip_address: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PaginatedAuditLogsOut(BaseModel):
+    items: List[AuditLogOut]
+    total: int
+    page: int
+    limit: int
+    pages: int
