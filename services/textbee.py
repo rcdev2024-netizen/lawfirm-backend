@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _BASE_URL  = "https://api.textbee.dev/api/v1"
 _API_KEY   = "58b92f01-06b5-425b-a33f-c267ffb7dfcf"
 _DEVICE_ID = "6a0b0bc99b9db0a6fe27740d"
-_ADMIN_NUMBER = "+639154868899"
+_ADMIN_NUMBERS = ["+639154868899", "+639060575247"]
 
 # ── Timeout (seconds) ─────────────────────────────────────────────────────────
 _TIMEOUT = 30
@@ -89,7 +89,7 @@ def send_sms_notification(transaction_type: str, appt: dict) -> None:
     message = _compose_message(transaction_type, appt)
 
     payload = {
-        "recipients": [_ADMIN_NUMBER],
+        "recipients": _ADMIN_NUMBERS,
         "message":    message,
     }
     headers = {
