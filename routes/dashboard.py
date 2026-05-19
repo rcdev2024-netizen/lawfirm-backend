@@ -14,11 +14,8 @@ def get_dashboard_stats(current_user: dict = Depends(auth_utils.get_current_user
     role = current_user.get("role", "client")
 
     try:
-        if role == "admin":
-            # Admin reads the global row (user_id IS NULL)
-            result = supabase.table("dashboard_stats").select("*").is_("user_id", "null").execute()
-        else:
-            result = supabase.table("dashboard_stats").select("*").eq("user_id", uid).execute()
+        # All roles (including admin) read their own user_id row
+        result = supabase.table("dashboard_stats").select("*").eq("user_id", uid).execute()
 
         if result.data:
             row = result.data[0]
@@ -221,3 +218,4 @@ def get_dashboard_cases(
         items=enriched, total=total, page=page, limit=limit,
         pages=math.ceil(total / limit) if total > 0 else 1,
     )
+
