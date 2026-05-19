@@ -1,10 +1,10 @@
-from pydantic import BaseModel, EmailStr
+﻿from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import date, datetime
 from decimal import Decimal
 
 
-# ── AUTH SCHEMAS ──────────────────────────────────────────────
+# â”€â”€ AUTH SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class UserRegister(BaseModel):
     full_name: str
@@ -46,7 +46,7 @@ class Token(BaseModel):
     user: UserOut
 
 
-# ── CLIENT SCHEMAS ────────────────────────────────────────────
+# â”€â”€ CLIENT SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class ClientCreate(BaseModel):
     full_name: str
@@ -77,7 +77,7 @@ class ClientOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── ATTORNEY SCHEMAS ──────────────────────────────────────────
+# â”€â”€ ATTORNEY SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class AttorneyCreate(BaseModel):
     full_name: str
@@ -106,7 +106,7 @@ class AttorneyOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── USER SEARCH SCHEMA ────────────────────────────────────────
+# â”€â”€ USER SEARCH SCHEMA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class UserSearchResult(BaseModel):
     id: int
@@ -117,7 +117,7 @@ class UserSearchResult(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── APPOINTMENT SCHEMAS ────────────────────────────────────────
+# â”€â”€ APPOINTMENT SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class AppointmentCreate(BaseModel):
     full_name: str
@@ -160,7 +160,7 @@ class AppointmentAdminUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-# ── CASE SCHEMAS ───────────────────────────────────────────────
+# â”€â”€ CASE SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class CaseCreate(BaseModel):
     case_number: str
@@ -243,7 +243,7 @@ class PaginatedCasesOut(BaseModel):
     pages: int
 
 
-# ── DOCUMENT SCHEMAS ────────────────────────────────────────────
+# â”€â”€ DOCUMENT SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class DocumentCreate(BaseModel):
     title: str
@@ -270,7 +270,7 @@ class DocumentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── MESSAGE SCHEMAS ─────────────────────────────────────────────
+# â”€â”€ MESSAGE SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class MessageCreate(BaseModel):
     recipient_id: int
@@ -294,7 +294,7 @@ class MessageOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── NOTIFICATION SCHEMAS ────────────────────────────────────────
+# â”€â”€ NOTIFICATION SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class NotificationOut(BaseModel):
     id: int
@@ -321,7 +321,7 @@ class PaginatedNotificationsOut(BaseModel):
     pages: int
 
 
-# ── INVOICE SCHEMAS ─────────────────────────────────────────────
+# â”€â”€ INVOICE SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class InvoiceCreate(BaseModel):
     invoice_number: str
@@ -357,7 +357,7 @@ class InvoiceStatusUpdate(BaseModel):
     paid_date: Optional[date] = None
 
 
-# ── ROLE SCHEMAS ────────────────────────────────────────────────
+# â”€â”€ ROLE SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 VALID_ROLES = {"guest", "client", "paralegal", "attorney", "admin"}
 
@@ -431,7 +431,7 @@ class RoleAuditOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ── DASHBOARD SCHEMAS ───────────────────────────────────────────
+# â”€â”€ DASHBOARD SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class DashboardStats(BaseModel):
     active_cases: int
@@ -440,6 +440,11 @@ class DashboardStats(BaseModel):
     unpaid_invoices: int
     unread_messages: int
     unread_notifications: int
+    total_cases: int = 0
+    cases_in_progress: int = 0
+    cases_review: int = 0
+    cases_closed: int = 0
+    cases_open: int = 0
 
 
 class ScheduleAppointmentOut(BaseModel):
@@ -470,7 +475,7 @@ class TodayScheduleOut(BaseModel):
     total_appointments: int
 
 
-# ── AUDIT LOG SCHEMAS ────────────────────────────────────────────
+# â”€â”€ AUDIT LOG SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class AuditLogOut(BaseModel):
     id: int
@@ -492,3 +497,4 @@ class PaginatedAuditLogsOut(BaseModel):
     page: int
     limit: int
     pages: int
+
