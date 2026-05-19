@@ -8,43 +8,52 @@ import math
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 
-def safe_count(table: str, filters: list = None) -> int:
-    """Count rows in a table with optional filters. Returns 0 on error."""
-    try:
-        q = supabase.table(table).select("id", count="exact")
-        if filters:
-            for method, *args in filters:
-                q = getattr(q, method)(*args)
-        result = q.execute()
-        return result.count or 0
-    except Exception:
-        return 0
-
-
 @router.get("/stats", response_model=schemas.DashboardStats, summary="Get dashboard stats for current user")
 def get_dashboard_stats(current_user: dict = Depends(auth_utils.get_current_user)):
     uid = current_user["id"]
     role = current_user.get("role", "client")
 
-    active_cases = 0
-    upcoming_appointments = 0
-    total_documents = 0
-    unpaid_invoices = 0
-    unread_messages = 0
-    unread_notifications = 0
-    cases_in_progress = 0
-    cases_review = 0
-    cases_closed = 0
-    cases_open = 0
-    total_cases = 0
+    try:
+        if role == "admin":
+            # Admin reads the global row (user_id IS NULL)
+            result = supabase.table("dashboard_stats").select("*").is_("user_id", "null").execute()
+        else:
+            result = supabase.table("dashboard_stats").select("*").eq("user_id", uid).execute()
+
+        if result.data:
+            row = result.data[0]
+            return schemas.DashboardStats(
+                active_cases=row.get("active_cases", 0),
+                upcoming_appointments=row.get("upcoming_appointments", 0),
+                total_documents=row.get("total_documents", 0),
+                unpaid_invoices=row.get("unpaid_invoices", 0),
+                unread_messages=row.get("unread_messages", 0),
+                unread_notifications=row.get("unread_notifications", 0),
+                total_cases=row.get("total_cases", 0),
+                cases_in_progress=row.get("cases_in_progress", 0),
+                cases_review=row.get("cases_review", 0),
+                cases_closed=row.get("cases_closed", 0),
+                cases_open=row.get("cases_open", 0),
+            )
+    except Exception:
+        pass
+
+    # Fallback: compute on the fly if stats table not yet populated
+    return _compute_stats_fallback(uid, role)
+
+
+def _compute_stats_fallback(uid: int, role: str) -> schemas.DashboardStats:
+    """Fallback live computation if dashboard_stats table is empty."""
+    active_cases = upcoming_appointments = total_documents = 0
+    unpaid_invoices = unread_messages = unread_notifications = 0
+    total_cases = cases_in_progress = cases_review = cases_closed = cases_open = 0
 
     try:
-        # Fetch all cases with status for this user/role
         if role == "client":
             cases_res = supabase.table("cases").select("id,status").eq("client_id", uid).execute()
         elif role == "attorney":
             cases_res = supabase.table("cases").select("id,status").eq("attorney_id", uid).execute()
-        else:  # admin — fetch all
+        else:
             cases_res = supabase.table("cases").select("id,status").execute()
 
         all_cases = cases_res.data or []
@@ -55,42 +64,30 @@ def get_dashboard_stats(current_user: dict = Depends(auth_utils.get_current_user
         cases_open = sum(1 for c in all_cases if c.get("status") == "open")
         active_cases = cases_in_progress + cases_review + cases_open
 
-        # Appointments
         if role == "client":
-            appt_res = supabase.table("appointments").select("id", count="exact").eq("user_id", uid).eq("status", "confirmed").execute()
-            upcoming_appointments = appt_res.count or 0
-        elif role == "attorney":
-            appt_res = supabase.table("appointments").select("id", count="exact").eq("attorney_id", uid).eq("status", "confirmed").execute()
-            upcoming_appointments = appt_res.count or 0
-        else:
-            appt_res = supabase.table("appointments").select("id", count="exact").eq("status", "confirmed").execute()
-            upcoming_appointments = appt_res.count or 0
-
-        # Documents
-        if role == "client":
+            r = supabase.table("appointments").select("id", count="exact").eq("user_id", uid).eq("status", "confirmed").execute()
+            upcoming_appointments = r.count or 0
             case_ids = [c["id"] for c in all_cases]
             if case_ids:
-                docs_res = supabase.table("documents").select("id", count="exact").in_("case_id", case_ids).execute()
-                total_documents = docs_res.count or 0
-        elif role == "admin":
-            docs_res = supabase.table("documents").select("id", count="exact").execute()
-            total_documents = docs_res.count or 0
+                r = supabase.table("documents").select("id", count="exact").in_("case_id", case_ids).execute()
+                total_documents = r.count or 0
+            r = supabase.table("invoices").select("id", count="exact").eq("client_id", uid).eq("status", "unpaid").execute()
+            unpaid_invoices = r.count or 0
+        elif role == "attorney":
+            r = supabase.table("appointments").select("id", count="exact").eq("attorney_id", uid).eq("status", "confirmed").execute()
+            upcoming_appointments = r.count or 0
+        else:
+            r = supabase.table("appointments").select("id", count="exact").eq("status", "confirmed").execute()
+            upcoming_appointments = r.count or 0
+            r = supabase.table("documents").select("id", count="exact").execute()
+            total_documents = r.count or 0
+            r = supabase.table("invoices").select("id", count="exact").eq("status", "unpaid").execute()
+            unpaid_invoices = r.count or 0
 
-        # Invoices
-        if role == "client":
-            inv_res = supabase.table("invoices").select("id", count="exact").eq("client_id", uid).eq("status", "unpaid").execute()
-            unpaid_invoices = inv_res.count or 0
-        elif role == "admin":
-            inv_res = supabase.table("invoices").select("id", count="exact").eq("status", "unpaid").execute()
-            unpaid_invoices = inv_res.count or 0
-
-        # Messages & notifications (all roles)
-        msg_res = supabase.table("messages").select("id", count="exact").eq("recipient_id", uid).eq("is_read", False).execute()
-        unread_messages = msg_res.count or 0
-
-        notif_res = supabase.table("notifications").select("id", count="exact").eq("user_id", uid).eq("is_read", False).execute()
-        unread_notifications = notif_res.count or 0
-
+        r = supabase.table("messages").select("id", count="exact").eq("recipient_id", uid).eq("is_read", False).execute()
+        unread_messages = r.count or 0
+        r = supabase.table("notifications").select("id", count="exact").eq("user_id", uid).eq("is_read", False).execute()
+        unread_notifications = r.count or 0
     except Exception:
         pass
 
@@ -162,23 +159,11 @@ def get_today_schedule(current_user: dict = Depends(auth_utils.get_current_user)
                 grouped[key]["appointments"].append(appt)
             schedules = list(grouped.values())
         elif role == "attorney":
-            schedules = [{
-                "attorney_id": uid,
-                "attorney_name": current_user.get("full_name", ""),
-                "appointments": appointments,
-            }]
+            schedules = [{"attorney_id": uid, "attorney_name": current_user.get("full_name", ""), "appointments": appointments}]
         else:
-            schedules = [{
-                "attorney_id": None,
-                "attorney_name": "My Appointments",
-                "appointments": appointments,
-            }]
+            schedules = [{"attorney_id": None, "attorney_name": "My Appointments", "appointments": appointments}]
 
-        return schemas.TodayScheduleOut(
-            date=today_str,
-            schedules=schedules,
-            total_appointments=len(appointments),
-        )
+        return schemas.TodayScheduleOut(date=today_str, schedules=schedules, total_appointments=len(appointments))
     except Exception:
         return schemas.TodayScheduleOut(date=today_str, schedules=[], total_appointments=0)
 
@@ -218,28 +203,21 @@ def get_dashboard_cases(
 
     user_ids = set()
     for c in cases:
-        if c.get("attorney_id"):
-            user_ids.add(c["attorney_id"])
-        if c.get("client_id"):
-            user_ids.add(c["client_id"])
+        if c.get("attorney_id"): user_ids.add(c["attorney_id"])
+        if c.get("client_id"):   user_ids.add(c["client_id"])
 
     user_map: dict = {}
     if user_ids:
         users_res = supabase.table("users").select("id,full_name").in_("id", list(user_ids)).execute()
         user_map = {u["id"]: u["full_name"] for u in (users_res.data or [])}
 
-    enriched = []
-    for c in cases:
-        enriched.append({
-            **c,
-            "attorney_name": user_map.get(c.get("attorney_id"), "") if c.get("attorney_id") else None,
-            "client_name": user_map.get(c.get("client_id"), "") if c.get("client_id") else None,
-        })
+    enriched = [{
+        **c,
+        "attorney_name": user_map.get(c.get("attorney_id")) if c.get("attorney_id") else None,
+        "client_name":   user_map.get(c.get("client_id"))   if c.get("client_id")   else None,
+    } for c in cases]
 
     return schemas.PaginatedCasesOut(
-        items=enriched,
-        total=total,
-        page=page,
-        limit=limit,
+        items=enriched, total=total, page=page, limit=limit,
         pages=math.ceil(total / limit) if total > 0 else 1,
     )
