@@ -176,46 +176,66 @@ def get_dashboard_cases(
     uid = current_user["id"]
     skip = (page - 1) * limit
 
-    count_q = supabase.table("cases").select("id", count="exact")
+    # Build data query — select with user names via foreign key join
     data_q = (
         supabase.table("cases")
-        .select("id,case_number,case_name,case_type,status,client_id,attorney_id,next_hearing_date,next_hearing_time,updated_at,created_at")
+        .select(
+            "id,case_number,case_name,case_type,status,client_id,attorney_id,"
+            "next_hearing_date,next_hearing_time,updated_at,created_at,"
+            "attorney:users!cases_attorney_id_fkey(full_name),"
+            "client:users!cases_client_id_fkey(full_name)"
+        )
         .order("created_at", desc=True)
         .range(skip, skip + limit - 1)
     )
 
     if role == "client":
-        count_q = count_q.eq("client_id", uid)
         data_q = data_q.eq("client_id", uid)
     elif role == "attorney":
-        count_q = count_q.eq("attorney_id", uid)
         data_q = data_q.eq("attorney_id", uid)
 
     if status:
-        count_q = count_q.eq("status", status)
         data_q = data_q.eq("status", status)
 
-    total = count_q.execute().count or 0
     cases = data_q.execute().data or []
 
-    user_ids = set()
+    # Get total from dashboard_stats (pre-computed) — avoids slow COUNT(*)
+    total = 0
+    try:
+        stats_res = supabase.table("dashboard_stats").select("total_cases").eq("user_id", uid).execute()
+        if stats_res.data:
+            total = stats_res.data[0].get("total_cases", 0)
+    except Exception:
+        pass
+
+    # Fallback: count only if stats not available
+    if total == 0:
+        try:
+            count_q = supabase.table("cases").select("id", count="exact")
+            if role == "client":
+                count_q = count_q.eq("client_id", uid)
+            elif role == "attorney":
+                count_q = count_q.eq("attorney_id", uid)
+            if status:
+                count_q = count_q.eq("status", status)
+            total = count_q.execute().count or 0
+        except Exception:
+            total = len(cases)
+
+    # Flatten joined user names
+    enriched = []
     for c in cases:
-        if c.get("attorney_id"): user_ids.add(c["attorney_id"])
-        if c.get("client_id"):   user_ids.add(c["client_id"])
-
-    user_map: dict = {}
-    if user_ids:
-        users_res = supabase.table("users").select("id,full_name").in_("id", list(user_ids)).execute()
-        user_map = {u["id"]: u["full_name"] for u in (users_res.data or [])}
-
-    enriched = [{
-        **c,
-        "attorney_name": user_map.get(c.get("attorney_id")) if c.get("attorney_id") else None,
-        "client_name":   user_map.get(c.get("client_id"))   if c.get("client_id")   else None,
-    } for c in cases]
+        atty = c.pop("attorney", None)
+        client = c.pop("client", None)
+        enriched.append({
+            **c,
+            "attorney_name": atty.get("full_name") if atty else None,
+            "client_name":   client.get("full_name") if client else None,
+        })
 
     return schemas.PaginatedCasesOut(
         items=enriched, total=total, page=page, limit=limit,
         pages=math.ceil(total / limit) if total > 0 else 1,
     )
+
 
