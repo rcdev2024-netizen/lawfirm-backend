@@ -8,10 +8,14 @@ import math
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 
-def safe_count(query) -> int:
-    """Execute a count query, returning 0 on any error."""
+def safe_count(table: str, filters: list = None) -> int:
+    """Count rows in a table with optional filters. Returns 0 on error."""
     try:
-        result = query.execute()
+        q = supabase.table(table).select("id", count="exact")
+        if filters:
+            for method, *args in filters:
+                q = getattr(q, method)(*args)
+        result = q.execute()
         return result.count or 0
     except Exception:
         return 0
@@ -35,64 +39,57 @@ def get_dashboard_stats(current_user: dict = Depends(auth_utils.get_current_user
     total_cases = 0
 
     try:
+        # Fetch all cases with status for this user/role
         if role == "client":
-            base_cases = supabase.table("cases").select("id,status").eq("client_id", uid).execute()
-            all_cases = base_cases.data or []
+            cases_res = supabase.table("cases").select("id,status").eq("client_id", uid).execute()
         elif role == "attorney":
-            base_cases = supabase.table("cases").select("id,status").eq("attorney_id", uid).execute()
-            all_cases = base_cases.data or []
-        else:  # admin
-            base_cases = supabase.table("cases").select("id,status").execute()
-            all_cases = base_cases.data or []
+            cases_res = supabase.table("cases").select("id,status").eq("attorney_id", uid).execute()
+        else:  # admin — fetch all
+            cases_res = supabase.table("cases").select("id,status").execute()
 
+        all_cases = cases_res.data or []
         total_cases = len(all_cases)
         cases_in_progress = sum(1 for c in all_cases if c.get("status") == "in_progress")
         cases_review = sum(1 for c in all_cases if c.get("status") == "review")
         cases_closed = sum(1 for c in all_cases if c.get("status") == "closed")
         cases_open = sum(1 for c in all_cases if c.get("status") == "open")
-        active_cases = sum(1 for c in all_cases if c.get("status") in ["open", "in_progress", "review"])
+        active_cases = cases_in_progress + cases_review + cases_open
 
+        # Appointments
         if role == "client":
-            upcoming_appointments = safe_count(
-                supabase.table("appointments").select("id", count="exact", head=True)
-                .eq("user_id", uid).eq("status", "confirmed")
-            )
+            appt_res = supabase.table("appointments").select("id", count="exact").eq("user_id", uid).eq("status", "confirmed").execute()
+            upcoming_appointments = appt_res.count or 0
+        elif role == "attorney":
+            appt_res = supabase.table("appointments").select("id", count="exact").eq("attorney_id", uid).eq("status", "confirmed").execute()
+            upcoming_appointments = appt_res.count or 0
+        else:
+            appt_res = supabase.table("appointments").select("id", count="exact").eq("status", "confirmed").execute()
+            upcoming_appointments = appt_res.count or 0
+
+        # Documents
+        if role == "client":
             case_ids = [c["id"] for c in all_cases]
             if case_ids:
-                total_documents = safe_count(
-                    supabase.table("documents").select("id", count="exact", head=True)
-                    .in_("case_id", case_ids)
-                )
-            unpaid_invoices = safe_count(
-                supabase.table("invoices").select("id", count="exact", head=True)
-                .eq("client_id", uid).eq("status", "unpaid")
-            )
-        elif role == "attorney":
-            upcoming_appointments = safe_count(
-                supabase.table("appointments").select("id", count="exact", head=True)
-                .eq("attorney_id", uid).eq("status", "confirmed")
-            )
-        else:  # admin
-            upcoming_appointments = safe_count(
-                supabase.table("appointments").select("id", count="exact", head=True)
-                .eq("status", "confirmed")
-            )
-            total_documents = safe_count(
-                supabase.table("documents").select("id", count="exact", head=True)
-            )
-            unpaid_invoices = safe_count(
-                supabase.table("invoices").select("id", count="exact", head=True)
-                .eq("status", "unpaid")
-            )
+                docs_res = supabase.table("documents").select("id", count="exact").in_("case_id", case_ids).execute()
+                total_documents = docs_res.count or 0
+        elif role == "admin":
+            docs_res = supabase.table("documents").select("id", count="exact").execute()
+            total_documents = docs_res.count or 0
 
-        unread_messages = safe_count(
-            supabase.table("messages").select("id", count="exact", head=True)
-            .eq("recipient_id", uid).eq("is_read", False)
-        )
-        unread_notifications = safe_count(
-            supabase.table("notifications").select("id", count="exact", head=True)
-            .eq("user_id", uid).eq("is_read", False)
-        )
+        # Invoices
+        if role == "client":
+            inv_res = supabase.table("invoices").select("id", count="exact").eq("client_id", uid).eq("status", "unpaid").execute()
+            unpaid_invoices = inv_res.count or 0
+        elif role == "admin":
+            inv_res = supabase.table("invoices").select("id", count="exact").eq("status", "unpaid").execute()
+            unpaid_invoices = inv_res.count or 0
+
+        # Messages & notifications (all roles)
+        msg_res = supabase.table("messages").select("id", count="exact").eq("recipient_id", uid).eq("is_read", False).execute()
+        unread_messages = msg_res.count or 0
+
+        notif_res = supabase.table("notifications").select("id", count="exact").eq("user_id", uid).eq("is_read", False).execute()
+        unread_notifications = notif_res.count or 0
 
     except Exception:
         pass
@@ -122,7 +119,7 @@ def get_today_schedule(current_user: dict = Depends(auth_utils.get_current_user)
         if role == "admin":
             appt_res = (
                 supabase.table("appointments")
-                .select("id,preferred_date,preferred_time,attorney_id,user_id,status,full_name,practice_area")
+                .select("id,full_name,email,preferred_date,preferred_time,attorney_id,user_id,status,practice_area,appointment_type")
                 .eq("preferred_date", today_str)
                 .order("preferred_time")
                 .execute()
@@ -130,7 +127,7 @@ def get_today_schedule(current_user: dict = Depends(auth_utils.get_current_user)
         elif role == "attorney":
             appt_res = (
                 supabase.table("appointments")
-                .select("id,preferred_date,preferred_time,attorney_id,user_id,status,full_name,practice_area")
+                .select("id,full_name,email,preferred_date,preferred_time,attorney_id,user_id,status,practice_area,appointment_type")
                 .eq("preferred_date", today_str)
                 .eq("attorney_id", uid)
                 .order("preferred_time")
@@ -139,7 +136,7 @@ def get_today_schedule(current_user: dict = Depends(auth_utils.get_current_user)
         else:
             appt_res = (
                 supabase.table("appointments")
-                .select("id,preferred_date,preferred_time,attorney_id,user_id,status,full_name,practice_area")
+                .select("id,full_name,email,preferred_date,preferred_time,attorney_id,user_id,status,practice_area,appointment_type")
                 .eq("preferred_date", today_str)
                 .eq("user_id", uid)
                 .order("preferred_time")
@@ -151,7 +148,7 @@ def get_today_schedule(current_user: dict = Depends(auth_utils.get_current_user)
         attorney_ids = list({a["attorney_id"] for a in appointments if a.get("attorney_id")})
         attorney_map: dict = {}
         if attorney_ids:
-            attorneys_res = supabase.table("users").select("id, full_name").in_("id", attorney_ids).execute()
+            attorneys_res = supabase.table("users").select("id,full_name").in_("id", attorney_ids).execute()
             attorney_map = {u["id"]: u["full_name"] for u in (attorneys_res.data or [])}
 
         if role == "admin":
@@ -228,7 +225,7 @@ def get_dashboard_cases(
 
     user_map: dict = {}
     if user_ids:
-        users_res = supabase.table("users").select("id, full_name").in_("id", list(user_ids)).execute()
+        users_res = supabase.table("users").select("id,full_name").in_("id", list(user_ids)).execute()
         user_map = {u["id"]: u["full_name"] for u in (users_res.data or [])}
 
     enriched = []
