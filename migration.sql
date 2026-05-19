@@ -117,8 +117,8 @@ CREATE TABLE IF NOT EXISTS invoices (
 );
 
 -- ============================================================
--- INDEXES
--- ============================================================
+-- INDEXESS
+-- =====================S=======================================
 CREATE INDEX IF NOT EXISTS idx_cases_client_id ON cases(client_id);
 CREATE INDEX IF NOT EXISTS idx_cases_attorney_id ON cases(attorney_id);
 CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
