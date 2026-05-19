@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends, Request
 from database import supabase
 import schemas
 import auth as auth_utils
@@ -49,11 +49,12 @@ def register(user_data: schemas.UserRegister):
 
 
 @router.post("/login", response_model=schemas.Token, summary="Login and get JWT token")
-def login(credentials: schemas.UserLogin):
+def login(credentials: schemas.UserLogin, background_tasks: BackgroundTasks):
     result = (
         supabase.table("users")
-        .select("*, roles!users_role_id_fkey(name)")
+        .select("id, full_name, email, hashed_password, phone, role_id, is_active, approval_status, created_at, roles!users_role_id_fkey(name)")
         .eq("email", credentials.email)
+        .limit(1)
         .execute()
     )
     if not result.data:
@@ -81,7 +82,15 @@ def login(credentials: schemas.UserLogin):
 
     try:
         from routes.audit_logs import log_action
-        log_action(user["id"], user["full_name"], "login", "user", user["id"], f"User logged in: {user['email']}")
+        background_tasks.add_task(
+            log_action,
+            user["id"],
+            user["full_name"],
+            "login",
+            "user",
+            user["id"],
+            f"User logged in: {user['email']}"
+        )
     except Exception:
         pass
 
