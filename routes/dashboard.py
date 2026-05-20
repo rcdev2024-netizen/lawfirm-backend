@@ -58,8 +58,9 @@ def _compute_stats_fallback(uid: int, role: str) -> schemas.DashboardStats:
         cases_open = sum(1 for c in all_cases if c.get("status") == "open")
         active_cases = cases_in_progress + cases_review + cases_open
 
+        today = str(date.today())
         if role == "client":
-            r = supabase.table("appointments").select("id", count="exact").eq("user_id", uid).eq("status", "confirmed").execute()
+            r = supabase.table("appointments").select("id", count="exact").eq("user_id", uid).eq("status", "confirmed").gte("preferred_date", today).execute()
             upcoming_appointments = r.count or 0
             case_ids = [c["id"] for c in all_cases]
             if case_ids:
@@ -68,10 +69,10 @@ def _compute_stats_fallback(uid: int, role: str) -> schemas.DashboardStats:
             r = supabase.table("invoices").select("id", count="exact").eq("client_id", uid).eq("status", "unpaid").execute()
             unpaid_invoices = r.count or 0
         elif role == "attorney":
-            r = supabase.table("appointments").select("id", count="exact").eq("attorney_id", uid).eq("status", "confirmed").execute()
+            r = supabase.table("appointments").select("id", count="exact").eq("attorney_id", uid).eq("status", "confirmed").gte("preferred_date", today).execute()
             upcoming_appointments = r.count or 0
         else:
-            r = supabase.table("appointments").select("id", count="exact").eq("status", "confirmed").execute()
+            r = supabase.table("appointments").select("id", count="exact").eq("status", "confirmed").gte("preferred_date", today).execute()
             upcoming_appointments = r.count or 0
             r = supabase.table("documents").select("id", count="exact").execute()
             total_documents = r.count or 0
@@ -239,4 +240,5 @@ def get_dashboard_cases(
         items=enriched, total=total, page=page, limit=limit,
         pages=math.ceil(total / limit) if total > 0 else 1,
     )
+
 
