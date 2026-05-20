@@ -1,8 +1,8 @@
-import os
+﻿import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard, roles, audit_logs
+from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard, roles, audit_logs, reports
 from routes.clients import router as clients_router
 from routes.attorneys import router as attorneys_router
 
@@ -13,20 +13,20 @@ app = FastAPI(
     description="""
 ## Law Firm Portal API
 
-Powers the full Law Firm portal — client, attorney, and admin dashboards.
+Powers the full Law Firm portal â€” client, attorney, and admin dashboards.
 
 ### Features
-- **Authentication** – Register, login, JWT-based session management
-- **Appointments** – Book, view, update appointments (online/onsite)
-- **Cases** – Full case lifecycle management
-- **Clients** – Client management with approval workflow
-- **Attorneys** – Attorney management
-- **Documents** – Document storage and retrieval
-- **Messages** – Internal messaging between clients and attorneys
-- **Notifications** – Real-time notification feed
-- **Invoices** – Billing and invoice management
-- **Dashboard** – Aggregated stats, today's schedule, case overview
-- **Audit Logs** – User activity tracking
+- **Authentication** â€“ Register, login, JWT-based session management
+- **Appointments** â€“ Book, view, update appointments (online/onsite)
+- **Cases** â€“ Full case lifecycle management
+- **Clients** â€“ Client management with approval workflow
+- **Attorneys** â€“ Attorney management
+- **Documents** â€“ Document storage and retrieval
+- **Messages** â€“ Internal messaging between clients and attorneys
+- **Notifications** â€“ Real-time notification feed
+- **Invoices** â€“ Billing and invoice management
+- **Dashboard** â€“ Aggregated stats, today's schedule, case overview
+- **Audit Logs** â€“ User activity tracking
 
 ### Authentication
 Most endpoints require a Bearer JWT token. Obtain via `/api/auth/login`.
@@ -60,6 +60,7 @@ app.include_router(roles.router)
 app.include_router(clients_router)
 app.include_router(attorneys_router)
 app.include_router(audit_logs.router)
+app.include_router(reports.router)
 
 
 @app.on_event("startup")
@@ -91,3 +92,4 @@ def health():
         "version": "2.2.0",
         "supabase": db_status
     }
+
