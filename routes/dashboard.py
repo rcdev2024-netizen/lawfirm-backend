@@ -3,6 +3,7 @@ from database import supabase
 import schemas
 import auth as auth_utils
 from datetime import date
+from typing import Optional
 import math
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
@@ -14,9 +15,7 @@ def get_dashboard_stats(current_user: dict = Depends(auth_utils.get_current_user
     role = current_user.get("role", "client")
 
     try:
-        # All roles (including admin) read their own user_id row
         result = supabase.table("dashboard_stats").select("*").eq("user_id", uid).execute()
-
         if result.data:
             row = result.data[0]
             return schemas.DashboardStats(
@@ -35,12 +34,10 @@ def get_dashboard_stats(current_user: dict = Depends(auth_utils.get_current_user
     except Exception:
         pass
 
-    # Fallback: compute on the fly if stats table not yet populated
     return _compute_stats_fallback(uid, role)
 
 
 def _compute_stats_fallback(uid: int, role: str) -> schemas.DashboardStats:
-    """Fallback live computation if dashboard_stats table is empty."""
     active_cases = upcoming_appointments = total_documents = 0
     unpaid_invoices = unread_messages = unread_notifications = 0
     total_cases = cases_in_progress = cases_review = cases_closed = cases_open = 0
@@ -103,7 +100,7 @@ def _compute_stats_fallback(uid: int, role: str) -> schemas.DashboardStats:
     )
 
 
-@router.get("/today-schedule", response_model=schemas.TodayScheduleOut, summary="Get today'\''s schedule")
+@router.get("/today-schedule", response_model=schemas.TodayScheduleOut, summary="Get today's schedule")
 def get_today_schedule(current_user: dict = Depends(auth_utils.get_current_user)):
     role = current_user.get("role", "client")
     uid = current_user["id"]
@@ -138,7 +135,6 @@ def get_today_schedule(current_user: dict = Depends(auth_utils.get_current_user)
             )
 
         appointments = appt_res.data or []
-
         attorney_ids = list({a["attorney_id"] for a in appointments if a.get("attorney_id")})
         attorney_map: dict = {}
         if attorney_ids:
@@ -169,14 +165,37 @@ def get_today_schedule(current_user: dict = Depends(auth_utils.get_current_user)
 def get_dashboard_cases(
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=200),
-    status: str = Query(None),
+    status: Optional[str] = Query(None),
+    hearing_date_from: Optional[str] = Query(None, description="Filter by next_hearing_date >= this date (YYYY-MM-DD)"),
+    hearing_date_to: Optional[str] = Query(None, description="Filter by next_hearing_date <= this date (YYYY-MM-DD)"),
+    search: Optional[str] = Query(None, description="Search by case name, case number, or case type"),
     current_user: dict = Depends(auth_utils.get_current_user),
 ):
     role = current_user.get("role", "client")
     uid = current_user["id"]
     skip = (page - 1) * limit
 
-    # Build data query — select with user names via foreign key join
+    # ── Count query (for accurate total with filters applied) ──────────
+    count_q = supabase.table("cases").select("id", count="exact")
+    if role == "client":
+        count_q = count_q.eq("client_id", uid)
+    elif role == "attorney":
+        count_q = count_q.eq("attorney_id", uid)
+    if status:
+        count_q = count_q.eq("status", status)
+    if hearing_date_from:
+        count_q = count_q.gte("next_hearing_date", hearing_date_from)
+    if hearing_date_to:
+        count_q = count_q.lte("next_hearing_date", hearing_date_to)
+    if search:
+        count_q = count_q.ilike("case_name", f"%{search}%")
+
+    try:
+        total = count_q.execute().count or 0
+    except Exception:
+        total = 0
+
+    # ── Data query ─────────────────────────────────────────────────────
     data_q = (
         supabase.table("cases")
         .select(
@@ -185,6 +204,7 @@ def get_dashboard_cases(
             "attorney:users!cases_attorney_id_fkey(full_name),"
             "client:users!cases_client_id_fkey(full_name)"
         )
+        .order("next_hearing_date", desc=False)
         .order("created_at", desc=True)
         .range(skip, skip + limit - 1)
     )
@@ -193,36 +213,18 @@ def get_dashboard_cases(
         data_q = data_q.eq("client_id", uid)
     elif role == "attorney":
         data_q = data_q.eq("attorney_id", uid)
-
     if status:
         data_q = data_q.eq("status", status)
+    if hearing_date_from:
+        data_q = data_q.gte("next_hearing_date", hearing_date_from)
+    if hearing_date_to:
+        data_q = data_q.lte("next_hearing_date", hearing_date_to)
+    if search:
+        data_q = data_q.ilike("case_name", f"%{search}%")
 
     cases = data_q.execute().data or []
 
-    # Get total from dashboard_stats (pre-computed) — avoids slow COUNT(*)
-    total = 0
-    try:
-        stats_res = supabase.table("dashboard_stats").select("total_cases").eq("user_id", uid).execute()
-        if stats_res.data:
-            total = stats_res.data[0].get("total_cases", 0)
-    except Exception:
-        pass
-
-    # Fallback: count only if stats not available
-    if total == 0:
-        try:
-            count_q = supabase.table("cases").select("id", count="exact")
-            if role == "client":
-                count_q = count_q.eq("client_id", uid)
-            elif role == "attorney":
-                count_q = count_q.eq("attorney_id", uid)
-            if status:
-                count_q = count_q.eq("status", status)
-            total = count_q.execute().count or 0
-        except Exception:
-            total = len(cases)
-
-    # Flatten joined user names
+    # ── Flatten joined user names ──────────────────────────────────────
     enriched = []
     for c in cases:
         atty = c.pop("attorney", None)
@@ -237,5 +239,4 @@ def get_dashboard_cases(
         items=enriched, total=total, page=page, limit=limit,
         pages=math.ceil(total / limit) if total > 0 else 1,
     )
-
 
