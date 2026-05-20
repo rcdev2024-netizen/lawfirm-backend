@@ -327,7 +327,11 @@ def execute_report(parsed: Dict[str, Any], role: str, uid: int) -> Dict[str, Any
         elif entity == "clients":
             if role not in ("admin", "attorney"):
                 raise HTTPException(status_code=403, detail="Access denied")
-            q = supabase.table("users").select("id,full_name,email,phone,is_active,approval_status,created_at").eq("role", "client")
+            client_role = supabase.table("roles").select("id").eq("name", "client").execute()
+            client_role_id = client_role.data[0]["id"] if client_role.data else None
+            if not client_role_id:
+                raise HTTPException(status_code=500, detail="Client role not found")
+            q = supabase.table("users").select("id,full_name,email,phone,is_active,approval_status,created_at").eq("role_id", client_role_id)
             if "is_active" in filters:
                 q = q.eq("is_active", filters["is_active"])
             if filters.get("date_from"):
@@ -341,7 +345,11 @@ def execute_report(parsed: Dict[str, Any], role: str, uid: int) -> Dict[str, Any
         elif entity == "attorneys":
             if role not in ("admin",):
                 raise HTTPException(status_code=403, detail="Access denied")
-            q = supabase.table("users").select("id,full_name,email,phone,specialization,is_active,created_at").eq("role", "attorney")
+            atty_role = supabase.table("roles").select("id").eq("name", "attorney").execute()
+            atty_role_id = atty_role.data[0]["id"] if atty_role.data else None
+            if not atty_role_id:
+                raise HTTPException(status_code=500, detail="Attorney role not found")
+            q = supabase.table("users").select("id,full_name,email,phone,specialization,is_active,created_at").eq("role_id", atty_role_id)
             if "is_active" in filters:
                 q = q.eq("is_active", filters["is_active"])
             if filters.get("date_from"):
@@ -453,3 +461,4 @@ def get_suggestions(current_user: dict = Depends(auth_utils.get_current_user)):
     elif role == "attorney":
         return {"suggestions": base + attorney_extra}
     return {"suggestions": base}
+
