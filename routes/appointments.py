@@ -1,12 +1,15 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends, Query
+﻿from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends, Query
 from typing import List, Optional
 from database import supabase
 import schemas
 import auth as auth_utils
 from services.emailjs import send_appointment_notification
 from services.textbee import send_sms_notification
+from datetime import date
 
 router = APIRouter(prefix="/api/appointments", tags=["Appointments"])
+
+VALID_STATUSES = ["pending", "confirmed", "cancelled", "completed", "rescheduled", "expired"]
 
 
 @router.post(
@@ -33,10 +36,7 @@ def create_appointment(
     }
     result = supabase.table("appointments").insert(data).execute()
     if not result.data:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to book appointment",
-        )
+        raise HTTPException(status_code=500, detail="Failed to book appointment")
     appt = result.data[0]
     background_tasks.add_task(send_appointment_notification, "New Booking", appt)
     background_tasks.add_task(send_sms_notification, "New Booking", appt)
@@ -46,12 +46,15 @@ def create_appointment(
 @router.get(
     "",
     response_model=List[schemas.AppointmentOut],
-    summary="Get all appointments (admin/attorney)",
+    summary="Get all appointments (admin/attorney) with optional filters",
 )
 def get_appointments(
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=200),
     appt_status: Optional[str] = Query(None, alias="status"),
+    date_from: Optional[str] = Query(None, description="Filter preferred_date >= (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Filter preferred_date <= (YYYY-MM-DD)"),
+    search: Optional[str] = Query(None, description="Search full_name, email, practice_area"),
     current_user: dict = Depends(auth_utils.get_current_user),
 ):
     if current_user.get("role") not in ("admin", "attorney"):
@@ -60,11 +63,19 @@ def get_appointments(
     query = (
         supabase.table("appointments")
         .select("*")
-        .order("created_at", desc=True)
+        .order("preferred_date", desc=False)
+        .order("preferred_time", desc=False)
         .range(skip, skip + limit - 1)
     )
     if appt_status:
         query = query.eq("status", appt_status)
+    if date_from:
+        query = query.gte("preferred_date", date_from)
+    if date_to:
+        query = query.lte("preferred_date", date_to)
+    if search:
+        query = query.ilike("full_name", f"%{search}%")
+
     result = query.execute()
     return result.data or []
 
@@ -72,30 +83,109 @@ def get_appointments(
 @router.get(
     "/my",
     response_model=List[schemas.AppointmentOut],
-    summary="Get my appointments",
+    summary="Get my appointments with optional filters",
 )
-def get_my_appointments(current_user: dict = Depends(auth_utils.get_current_user)):
+def get_my_appointments(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    appt_status: Optional[str] = Query(None, alias="status"),
+    current_user: dict = Depends(auth_utils.get_current_user),
+):
     role = current_user.get("role", "client")
 
     if role == "attorney":
-        result = (
-            supabase.table("appointments")
-            .select("*")
-            .eq("attorney_id", current_user["id"])
-            .order("created_at", desc=True)
-            .execute()
-        )
+        query = supabase.table("appointments").select("*").eq("attorney_id", current_user["id"])
     elif role == "admin":
-        result = supabase.table("appointments").select("*").order("created_at", desc=True).execute()
+        query = supabase.table("appointments").select("*")
     else:
-        result = (
-            supabase.table("appointments")
-            .select("*")
-            .eq("user_id", current_user["id"])
-            .order("created_at", desc=True)
-            .execute()
-        )
+        query = supabase.table("appointments").select("*").eq("user_id", current_user["id"])
+
+    query = query.order("preferred_date", desc=False).order("preferred_time", desc=False)
+
+    if appt_status:
+        query = query.eq("status", appt_status)
+    if date_from:
+        query = query.gte("preferred_date", date_from)
+    if date_to:
+        query = query.lte("preferred_date", date_to)
+
+    result = query.execute()
     return result.data or []
+
+
+@router.post(
+    "/expire-stale",
+    summary="Mark past pending/confirmed appointments as expired (admin or cron)",
+)
+def expire_stale_appointments(
+    current_user: dict = Depends(auth_utils.get_current_user),
+):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    today = str(date.today())
+    # Mark pending/confirmed appointments whose date has passed as expired
+    result = (
+        supabase.table("appointments")
+        .update({"status": "expired"})
+        .lt("preferred_date", today)
+        .in_("status", ["pending", "confirmed"])
+        .execute()
+    )
+    count = len(result.data) if result.data else 0
+    return {"expired_count": count, "message": f"{count} appointment(s) marked as expired"}
+
+
+@router.post(
+    "/{appointment_id}/reschedule",
+    response_model=schemas.AppointmentOut,
+    summary="Reschedule an appointment — marks original as rescheduled, creates new pending",
+)
+def reschedule_appointment(
+    appointment_id: int,
+    body: schemas.AppointmentReschedule,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(auth_utils.get_current_user),
+):
+    if current_user.get("role") not in ("admin", "attorney"):
+        raise HTTPException(status_code=403, detail="Admin or attorney access required")
+
+    # Fetch original
+    fetch = supabase.table("appointments").select("*").eq("id", appointment_id).execute()
+    if not fetch.data:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    original = fetch.data[0]
+
+    # Mark original as rescheduled
+    supabase.table("appointments").update({
+        "status": "rescheduled",
+        "notes": f"Rescheduled to {body.new_date} at {body.new_time or 'TBD'}. {body.reason or ''}".strip()
+    }).eq("id", appointment_id).execute()
+
+    # Create new appointment with new date/time, linked back
+    new_data = {
+        "full_name":        original["full_name"],
+        "email":            original["email"],
+        "phone":            original.get("phone"),
+        "practice_area":    original.get("practice_area"),
+        "message":          original.get("message"),
+        "preferred_date":   str(body.new_date),
+        "preferred_time":   body.new_time,
+        "appointment_type": original.get("appointment_type", "onsite"),
+        "status":           "pending",
+        "user_id":          original.get("user_id"),
+        "attorney_id":      original.get("attorney_id"),
+        "notes":            f"Rescheduled from appointment #{appointment_id}. {body.reason or ''}".strip(),
+        "rescheduled_from_id": appointment_id,
+    }
+    new_result = supabase.table("appointments").insert(new_data).execute()
+    if not new_result.data:
+        raise HTTPException(status_code=500, detail="Failed to create rescheduled appointment")
+
+    new_appt = new_result.data[0]
+    background_tasks.add_task(send_appointment_notification, "Rescheduled", new_appt)
+    background_tasks.add_task(send_sms_notification, "Rescheduled", new_appt)
+    return new_appt
 
 
 @router.get(
@@ -109,7 +199,7 @@ def get_appointment(
 ):
     result = supabase.table("appointments").select("*").eq("id", appointment_id).execute()
     if not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+        raise HTTPException(status_code=404, detail="Appointment not found")
     return result.data[0]
 
 
@@ -127,12 +217,8 @@ def update_appointment_status(
     if current_user.get("role") not in ("admin", "attorney"):
         raise HTTPException(status_code=403, detail="Admin or attorney access required")
 
-    valid_statuses = ["pending", "confirmed", "cancelled", "completed"]
-    if body.status not in valid_statuses:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}",
-        )
+    if body.status not in VALID_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(VALID_STATUSES)}")
 
     update_data: dict = {"status": body.status}
     if body.notes is not None:
@@ -140,19 +226,18 @@ def update_appointment_status(
 
     result = supabase.table("appointments").update(update_data).eq("id", appointment_id).execute()
     if not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+        raise HTTPException(status_code=404, detail="Appointment not found")
 
     appt = result.data[0]
-    label = f"Status Updated → {body.status.capitalize()}"
-    background_tasks.add_task(send_appointment_notification, label, appt)
-    background_tasks.add_task(send_sms_notification, label, appt)
+    background_tasks.add_task(send_appointment_notification, f"Status → {body.status.capitalize()}", appt)
+    background_tasks.add_task(send_sms_notification, f"Status → {body.status.capitalize()}", appt)
     return appt
 
 
 @router.patch(
     "/{appointment_id}",
     response_model=schemas.AppointmentOut,
-    summary="Admin update: assign attorney and status",
+    summary="Admin update: assign attorney, status, notes",
 )
 def admin_update_appointment(
     appointment_id: int,
@@ -165,12 +250,8 @@ def admin_update_appointment(
 
     update_data: dict = {}
     if body.status is not None:
-        valid_statuses = ["pending", "confirmed", "cancelled", "completed"]
-        if body.status not in valid_statuses:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}",
-            )
+        if body.status not in VALID_STATUSES:
+            raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(VALID_STATUSES)}")
         update_data["status"] = body.status
     if body.attorney_id is not None:
         update_data["attorney_id"] = body.attorney_id
@@ -207,15 +288,14 @@ def delete_appointment(
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    # Fetch before deleting so we have the data for the email
     fetch = supabase.table("appointments").select("*").eq("id", appointment_id).execute()
     if not fetch.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+        raise HTTPException(status_code=404, detail="Appointment not found")
 
     appt = fetch.data[0]
     result = supabase.table("appointments").delete().eq("id", appointment_id).execute()
     if not result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found")
+        raise HTTPException(status_code=404, detail="Appointment not found")
 
     background_tasks.add_task(send_appointment_notification, "Deleted", appt)
     background_tasks.add_task(send_sms_notification, "Deleted", appt)

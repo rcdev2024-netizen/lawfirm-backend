@@ -154,6 +154,11 @@ class AppointmentStatusUpdate(BaseModel):
     notes: Optional[str] = None
 
 
+class AppointmentReschedule(BaseModel):
+    new_date: date
+    new_time: Optional[str] = None
+    reason: Optional[str] = None
+
 class AppointmentAdminUpdate(BaseModel):
     status: Optional[str] = None
     attorney_id: Optional[int] = None
@@ -497,4 +502,5 @@ class PaginatedAuditLogsOut(BaseModel):
     page: int
     limit: int
     pages: int
+
 
