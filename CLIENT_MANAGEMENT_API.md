@@ -16,9 +16,29 @@ Staff roles: `admin`, `attorney`, `secretary`, `paralegal`
 |--------|------|-------------|
 | GET | `/api/clients` | Paginated list (`is_deleted=false` default) |
 | GET | `/api/clients/search?q=` | Quick search |
-| GET | `/api/clients/{id}` | Full profile + `contact` |
-| PATCH | `/api/clients/{id}` | Edit; sets `updated_at` |
+| GET | `/api/clients/{id}` | Full profile + `contact` + `valid_ids` (signed image URLs) |
+| PATCH | `/api/clients/{id}` | Edit personal, contact, valid_ids |
+| POST | `/api/clients/{id}/uploads` | Multipart `file` + `category` → `{ upload_id, url }` |
 | DELETE | `/api/clients/{id}` | Soft delete (`is_deleted`, `deleted_at`) |
+
+### GET detail — `valid_ids` object
+
+Signed HTTPS URLs (regenerated on each read from `intake-uploads`):
+
+```json
+"valid_ids": {
+  "primary_id_type": "Driver's License",
+  "primary_id_number": "...",
+  "primary_id_image_url": "https://...",
+  "secondary_id_type": null,
+  "secondary_id_number": null,
+  "secondary_id_image_url": null
+}
+```
+
+### Upload categories
+
+`profile_photo`, `valid_id_primary`, `valid_id_secondary`
 
 **Removed:** `PATCH /api/clients/{id}/approval`, `POST /api/clients` (use intake finalize)
 

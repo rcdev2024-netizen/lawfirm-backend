@@ -481,21 +481,27 @@ def finalize_draft(draft_id: int, user: dict = Depends(require_admin_or_attorney
         "country": contact.get("country", "Philippines"),
     }).execute()
 
+    from services.storage_urls import extract_storage_path
+
     if valid_ids.get("primary_id_type"):
+        primary_img = valid_ids.get("primary_id_image_url")
+        ppath = extract_storage_path(primary_img)
         supabase.table("client_valid_ids").insert({
             "user_id": uid,
             "id_type": valid_ids["primary_id_type"],
             "id_number": valid_ids["primary_id_number"],
-            "id_image_url": valid_ids.get("primary_id_image_url"),
+            "id_image_url": ppath or primary_img,
             "is_primary": True,
             "uploaded_by": user["id"],
         }).execute()
     if valid_ids.get("secondary_id_type") and valid_ids.get("secondary_id_number"):
+        secondary_img = valid_ids.get("secondary_id_image_url")
+        spath = extract_storage_path(secondary_img)
         supabase.table("client_valid_ids").insert({
             "user_id": uid,
             "id_type": valid_ids["secondary_id_type"],
             "id_number": valid_ids["secondary_id_number"],
-            "id_image_url": valid_ids.get("secondary_id_image_url"),
+            "id_image_url": spath or secondary_img,
             "is_primary": False,
             "uploaded_by": user["id"],
         }).execute()

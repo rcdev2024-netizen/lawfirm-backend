@@ -109,11 +109,45 @@ class ClientContactPatch(BaseModel):
     alternate_phone: Optional[str] = None
 
 
+class ClientPersonalPatch(BaseModel):
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    suffix: Optional[str] = None
+    gender: Optional[str] = None
+    birth_date: Optional[date] = None
+    civil_status: Optional[str] = None
+    nationality: Optional[str] = None
+    place_of_birth: Optional[str] = None
+    occupation: Optional[str] = None
+
+
+class ClientValidIdsPatch(BaseModel):
+    primary_id_type: Optional[str] = None
+    primary_id_number: Optional[str] = None
+    primary_id_image_url: Optional[str] = None
+    primary_id_image_upload_id: Optional[int] = None
+    secondary_id_type: Optional[str] = None
+    secondary_id_number: Optional[str] = None
+    secondary_id_image_url: Optional[str] = None
+    secondary_id_image_upload_id: Optional[int] = None
+
+
+class ClientValidIdsDetail(BaseModel):
+    primary_id_type: Optional[str] = None
+    primary_id_number: Optional[str] = None
+    primary_id_image_url: Optional[str] = None
+    secondary_id_type: Optional[str] = None
+    secondary_id_number: Optional[str] = None
+    secondary_id_image_url: Optional[str] = None
+
+
 class ClientManagementUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
     phone_number: Optional[str] = None
     profile_photo_url: Optional[str] = None
+    profile_photo_upload_id: Optional[int] = None
     is_active: Optional[bool] = None
     first_name: Optional[str] = None
     middle_name: Optional[str] = None
@@ -125,7 +159,15 @@ class ClientManagementUpdate(BaseModel):
     nationality: Optional[str] = None
     place_of_birth: Optional[str] = None
     occupation: Optional[str] = None
+    personal: Optional[ClientPersonalPatch] = None
     contact: Optional[ClientContactPatch] = None
+    valid_ids: Optional[ClientValidIdsPatch] = None
+
+
+class ClientUploadOut(BaseModel):
+    upload_id: int
+    id: int
+    url: Optional[str] = None
 
 
 class ClientDetailOut(BaseModel):
@@ -154,6 +196,7 @@ class ClientDetailOut(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     contact: Optional[Dict[str, Any]] = None
+    valid_ids: Optional[ClientValidIdsDetail] = None
 
     model_config = {"from_attributes": True}
 
