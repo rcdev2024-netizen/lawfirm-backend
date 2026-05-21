@@ -75,12 +75,12 @@ class IntakeDraftData(BaseModel):
 
 class IntakeDraftCreate(BaseModel):
     source: Literal["manual", "ocr"] = "manual"
-    current_step: int = Field(1, ge=1, le=4)
+    current_step: int = Field(1, ge=1, le=3)
     draft_data: Optional[Dict[str, Any]] = None
 
 
 class IntakeDraftUpdate(BaseModel):
-    current_step: Optional[int] = Field(None, ge=1, le=4)
+    current_step: Optional[int] = Field(None, ge=1, le=3)
     draft_data: Optional[Dict[str, Any]] = None
     status: Optional[Literal["draft", "abandoned"]] = None
 
@@ -228,7 +228,7 @@ class CaseClassifyOut(BaseModel):
 
 class IntakeSuggestionsRequest(BaseModel):
     draft_data: Dict[str, Any] = Field(default_factory=dict)
-    current_step: int = Field(1, ge=1, le=4)
+    current_step: int = Field(1, ge=1, le=3)
 
 
 class IntakeSuggestion(BaseModel):

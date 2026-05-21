@@ -138,7 +138,7 @@ def build_suggestions(
 ) -> tuple[List[dict], bool]:
     """Hints for the active step only — no errors for empty future steps."""
     suggestions: List[dict] = []
-    step = max(1, min(4, current_step))
+    step = max(1, min(3, current_step))
 
     for e in validate_step_only(step, draft_data):
         suggestions.append({
@@ -188,16 +188,6 @@ def build_suggestions(
                 "field": "valid_ids.profile_photo_upload_id",
                 "severity": "info",
                 "message": "A profile photo helps staff identify the client.",
-            })
-
-    if step == 4:
-        ci = draft_data.get("case_info") or {}
-        if ci.get("notes") and not ci.get("case_category"):
-            pred = classify_case(ci.get("notes"), ci.get("case_type"))
-            suggestions.append({
-                "field": "case_info.case_category",
-                "severity": "info",
-                "message": f"Suggested category: {pred['predicted_category']}",
             })
 
     suggestions = _dedupe_suggestions(suggestions)

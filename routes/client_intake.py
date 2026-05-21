@@ -76,7 +76,7 @@ def _get_client_role_id() -> int:
 def _sections_in_payload(draft_data: Optional[dict]) -> list:
     if not draft_data:
         return []
-    return [k for k in draft_data if k in ("personal", "contact", "valid_ids", "case_info")]
+    return [k for k in draft_data if k in ("personal", "contact", "valid_ids")]
 
 
 def _validate_patch_payload(
@@ -227,7 +227,7 @@ def delete_draft(draft_id: int, user: dict = Depends(require_admin_or_attorney))
 @router.post("/drafts/{draft_id}/validate")
 def validate_draft_step(
     draft_id: int,
-    step: int = Query(..., ge=1, le=4),
+    step: int = Query(..., ge=1, le=3),
     user: dict = Depends(require_admin_or_attorney),
 ):
     d = get_draft(draft_id, user)
@@ -425,7 +425,6 @@ def finalize_draft(draft_id: int, user: dict = Depends(require_admin_or_attorney
     personal = raw.get("personal") or {}
     contact = raw.get("contact") or {}
     valid_ids = resolve_valid_ids_uploads(raw.get("valid_ids") or {})
-    case_info = raw.get("case_info") or {}
 
     email = contact.get("email")
     existing = supabase.table("users").select("id").eq("email", email).execute()
@@ -467,10 +466,10 @@ def finalize_draft(draft_id: int, user: dict = Depends(require_admin_or_attorney
         "nationality": personal.get("nationality"),
         "place_of_birth": personal.get("place_of_birth"),
         "occupation": personal.get("occupation"),
-        "client_status": case_info.get("client_status", "prospect"),
-        "priority_level": case_info.get("priority_level", "medium"),
-        "tags": case_info.get("tags") or [],
-        "referred_by": case_info.get("referred_by") or personal.get("referred_by"),
+        "client_status": "prospect",
+        "priority_level": "medium",
+        "tags": [],
+        "referred_by": personal.get("referred_by"),
         "profile_photo_url": valid_ids.get("profile_photo_url"),
         "photo_uploaded_by": user["id"],
         "photo_metadata": valid_ids.get("photo_metadata") or {},
@@ -519,19 +518,7 @@ def finalize_draft(draft_id: int, user: dict = Depends(require_admin_or_attorney
             "is_current": True,
         }).execute()
 
-    if case_info.get("case_type"):
-        supabase.table("client_intake_cases").insert({
-            "user_id": uid,
-            "case_type": case_info["case_type"],
-            "case_category": case_info.get("case_category"),
-            "consultation_date": case_info.get("consultation_date"),
-            "assigned_lawyer_id": case_info.get("assigned_lawyer_id"),
-            "referred_by": case_info.get("referred_by"),
-            "notes": case_info.get("notes"),
-            "priority_level": case_info.get("priority_level", "medium"),
-            "client_status": case_info.get("client_status", "prospect"),
-            "tags": case_info.get("tags") or [],
-        }).execute()
+    # Cases are created later via POST /api/cases (client_id = uid), not during intake.
 
     supabase.table("client_intake_drafts").update({
         "status": "submitted",

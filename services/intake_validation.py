@@ -1,4 +1,4 @@
-"""Step-scoped validation and 422 error formatting for client intake."""
+"""Step-scoped validation and 422 error formatting for client intake (3-step wizard)."""
 from typing import Any, Dict, List
 
 from fastapi import HTTPException, status
@@ -6,12 +6,13 @@ from fastapi import HTTPException, status
 from services.intake_helpers import (
     EMAIL_RE,
     PH_PHONE_RE,
-    build_full_name,
     normalize_phone,
 )
 
-SECTIONS = ("personal", "contact", "valid_ids", "case_info")
-STEP_TO_SECTION = {1: "personal", 2: "contact", 3: "valid_ids", 4: "case_info"}
+# Intake wizard: personal → contact → valid_ids (cases created later in Case Management)
+INTAKE_STEP_COUNT = 3
+SECTIONS = ("personal", "contact", "valid_ids")
+STEP_TO_SECTION = {1: "personal", 2: "contact", 3: "valid_ids"}
 
 
 def _err(field: str, message: str) -> Dict[str, str]:
@@ -19,8 +20,10 @@ def _err(field: str, message: str) -> Dict[str, str]:
 
 
 def validate_sections(raw: Dict[str, Any], sections: List[str]) -> List[Dict[str, str]]:
-    """Validate only the listed draft_data sections (partial PATCH)."""
+    """Validate only the listed draft_data sections (partial PATCH). Ignores case_info."""
     errors: List[Dict[str, str]] = []
+    # case_info is not part of intake — skip if accidentally sent
+    sections = [s for s in sections if s in SECTIONS]
 
     if "personal" in sections:
         p = raw.get("personal") or {}
@@ -69,18 +72,13 @@ def validate_sections(raw: Dict[str, Any], sections: List[str]) -> List[Dict[str
             if not (v.get("primary_id_number") or "").strip():
                 errors.append(_err("valid_ids.primary_id_number", "Primary ID number is required"))
 
-    if "case_info" in sections:
-        ci = raw.get("case_info") or {}
-        if not ci:
-            errors.append(_err("case_info", "Case information is required"))
-        elif not (ci.get("case_type") or "").strip():
-            errors.append(_err("case_info.case_type", "Case type is required"))
-
     return errors
 
 
 def validate_step_only(step: int, raw: Dict[str, Any]) -> List[Dict[str, str]]:
-    """Validate a single wizard step (1–4) against merged draft_data."""
+    """Validate a single wizard step (1–3) against merged draft_data."""
+    if step < 1 or step > INTAKE_STEP_COUNT:
+        return []
     section = STEP_TO_SECTION.get(step)
     if not section:
         return []
@@ -88,8 +86,9 @@ def validate_step_only(step: int, raw: Dict[str, Any]) -> List[Dict[str, str]]:
 
 
 def validate_all_steps(raw: Dict[str, Any]) -> List[Dict[str, str]]:
+    """All steps required before finalize (no case_info)."""
     errors: List[Dict[str, str]] = []
-    for step in range(1, 5):
+    for step in range(1, INTAKE_STEP_COUNT + 1):
         errors.extend(validate_step_only(step, raw))
     email = (raw.get("contact") or {}).get("email")
     if not email:

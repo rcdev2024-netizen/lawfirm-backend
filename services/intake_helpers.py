@@ -243,7 +243,7 @@ def merge_draft_data(
     overwrite: bool = False,
 ) -> Dict[str, Any]:
     result = dict(existing or {})
-    for section in ("personal", "contact", "valid_ids", "case_info"):
+    for section in ("personal", "contact", "valid_ids"):
         if section not in incoming:
             continue
         incoming_section = incoming[section] or {}
