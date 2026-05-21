@@ -454,28 +454,19 @@ def finalize_draft(draft_id: int, user: dict = Depends(require_admin_or_attorney
     new_user = user_row.data[0]
     uid = new_user["id"]
 
-    supabase.table("clients").insert({
-        "user_id": uid,
-        "first_name": personal.get("first_name"),
-        "middle_name": personal.get("middle_name"),
-        "last_name": personal.get("last_name"),
-        "suffix": personal.get("suffix"),
-        "gender": personal.get("gender"),
-        "birth_date": personal.get("birth_date"),
-        "civil_status": personal.get("civil_status"),
-        "nationality": personal.get("nationality"),
-        "place_of_birth": personal.get("place_of_birth"),
-        "occupation": personal.get("occupation"),
-        "client_status": "prospect",
-        "priority_level": "medium",
-        "tags": [],
-        "referred_by": personal.get("referred_by"),
-        "profile_photo_url": valid_ids.get("profile_photo_url"),
-        "photo_uploaded_by": user["id"],
-        "photo_metadata": valid_ids.get("photo_metadata") or {},
-        "intake_completed_at": datetime.now(timezone.utc).isoformat(),
-        "intake_completed_by": user["id"],
-    }).execute()
+    from services.client_management import upsert_client_from_intake
+
+    client_row = upsert_client_from_intake(
+        user_id=uid,
+        full_name=full_name,
+        email=email,
+        phone_number=normalize_phone(contact.get("phone_number", "")),
+        profile_photo_url=valid_ids.get("profile_photo_url"),
+        personal=personal,
+        contact=contact,
+        completed_by=user["id"],
+    )
+    client_record_id = client_row["id"]
 
     supabase.table("client_contact_info").insert({
         "user_id": uid,
@@ -537,12 +528,12 @@ def finalize_draft(draft_id: int, user: dict = Depends(require_admin_or_attorney
     _log_ai(draft_id, "finalize", user["id"], {"user_id": uid})
 
     return {
-        "client_id": uid,
+        "client_id": client_record_id,
         "user_id": uid,
         "email": email,
         "full_name": full_name,
         "temporary_password": temp_pw if not raw.get("password") else None,
-        "client_profile": {"user_id": uid, "full_name": full_name},
+        "client_profile": {"id": client_record_id, "user_id": uid, "full_name": full_name},
         "message": "Client created successfully. Share portal credentials securely.",
     }
 

@@ -1,5 +1,5 @@
 ﻿from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -75,6 +75,95 @@ class ClientOut(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+# ── CLIENT MANAGEMENT (clients table source of truth) ─────────
+
+class ClientListItem(BaseModel):
+    id: int
+    user_id: Optional[int] = None
+    full_name: str
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    is_active: bool = True
+    profile_photo_url: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class ClientSearchResult(BaseModel):
+    id: int
+    full_name: str
+    email: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+    user_id: Optional[int] = None
+
+
+class ClientContactPatch(BaseModel):
+    address: Optional[str] = None
+    barangay: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    zip_code: Optional[str] = None
+    country: Optional[str] = None
+    alternate_phone: Optional[str] = None
+
+
+class ClientManagementUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+    is_active: Optional[bool] = None
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    suffix: Optional[str] = None
+    gender: Optional[str] = None
+    birth_date: Optional[date] = None
+    civil_status: Optional[str] = None
+    nationality: Optional[str] = None
+    place_of_birth: Optional[str] = None
+    occupation: Optional[str] = None
+    contact: Optional[ClientContactPatch] = None
+
+
+class ClientDetailOut(BaseModel):
+    id: int
+    user_id: Optional[int] = None
+    full_name: str
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    is_active: bool = True
+    is_deleted: bool = False
+    profile_photo_url: Optional[str] = None
+    first_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    last_name: Optional[str] = None
+    suffix: Optional[str] = None
+    gender: Optional[str] = None
+    birth_date: Optional[date] = None
+    civil_status: Optional[str] = None
+    nationality: Optional[str] = None
+    place_of_birth: Optional[str] = None
+    occupation: Optional[str] = None
+    client_status: Optional[str] = None
+    priority_level: Optional[str] = None
+    tags: Optional[List[str]] = None
+    referred_by: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    contact: Optional[Dict[str, Any]] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PaginatedClientsManagementOut(BaseModel):
+    items: List[ClientListItem]
+    total: int
+    page: int
+    limit: int
+    pages: int
 
 
 # â”€â”€ ATTORNEY SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
