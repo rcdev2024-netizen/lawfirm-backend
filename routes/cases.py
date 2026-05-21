@@ -1,10 +1,14 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi.responses import JSONResponse
 from typing import List, Optional
 from database import supabase
 import schemas
 import auth as auth_utils
 
 router = APIRouter(prefix="/api/cases", tags=["Cases"])
+
+# List view excludes description — kept in detail endpoint
+_CASE_LIST_COLS = "id,case_number,case_name,case_type,status,client_id,attorney_id,next_hearing_date,next_hearing_time,court,judge,filed_date,closed_date,created_at"
 
 
 @router.post("", response_model=schemas.CaseOut, summary="Create a new case (admin/attorney)")
@@ -57,7 +61,7 @@ def get_cases(
     total = count_q.execute().count or 0
 
     # Data query
-    query = supabase.table("cases").select(cols).order("created_at", desc=True).range(skip, skip + limit - 1)
+    query = supabase.table("cases").select(_CASE_LIST_COLS).order("created_at", desc=True).range(skip, skip + limit - 1)
     if role == "client":
         query = query.eq("client_id", current_user["id"])
     elif role == "attorney":
@@ -81,11 +85,11 @@ def get_cases(
 def get_my_cases(current_user: dict = Depends(auth_utils.get_current_user)):
     role = current_user.get("role", "client")
     if role == "client":
-        result = supabase.table("cases").select("*").eq("client_id", current_user["id"]).order("created_at", desc=True).execute()
+        result = supabase.table("cases").select(_CASE_LIST_COLS).eq("client_id", current_user["id"]).order("created_at", desc=True).execute()
     elif role == "attorney":
-        result = supabase.table("cases").select("*").eq("attorney_id", current_user["id"]).order("created_at", desc=True).execute()
+        result = supabase.table("cases").select(_CASE_LIST_COLS).eq("attorney_id", current_user["id"]).order("created_at", desc=True).execute()
     else:
-        result = supabase.table("cases").select("*").order("created_at", desc=True).execute()
+        result = supabase.table("cases").select(_CASE_LIST_COLS).order("created_at", desc=True).execute()
     return result.data or []
 
 

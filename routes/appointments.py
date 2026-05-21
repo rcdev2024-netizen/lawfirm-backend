@@ -1,4 +1,5 @@
 ﻿from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends, Query
+from fastapi.responses import JSONResponse
 from typing import List, Optional
 from database import supabase
 import schemas
@@ -10,6 +11,9 @@ from datetime import date
 router = APIRouter(prefix="/api/appointments", tags=["Appointments"])
 
 VALID_STATUSES = ["pending", "confirmed", "cancelled", "completed", "rescheduled", "expired"]
+
+# List view excludes message (client's original inquiry text — heavy, not shown in list)
+_APPT_LIST_COLS = "id,full_name,email,phone,practice_area,preferred_date,preferred_time,appointment_type,status,notes,user_id,attorney_id,created_at"
 
 
 @router.post(
@@ -62,7 +66,7 @@ def get_appointments(
 
     query = (
         supabase.table("appointments")
-        .select("*")
+        .select(_APPT_LIST_COLS)
         .order("preferred_date", desc=False)
         .order("preferred_time", desc=False)
         .range(skip, skip + limit - 1)
@@ -76,8 +80,10 @@ def get_appointments(
     if search:
         query = query.ilike("full_name", f"%{search}%")
 
-    result = query.execute()
-    return result.data or []
+    items = query.execute().data or []
+    response = JSONResponse(content=items)
+    response.headers["Cache-Control"] = "private, max-age=30"
+    return response
 
 
 @router.get(
@@ -94,11 +100,11 @@ def get_my_appointments(
     role = current_user.get("role", "client")
 
     if role == "attorney":
-        query = supabase.table("appointments").select("*").eq("attorney_id", current_user["id"])
+        query = supabase.table("appointments").select(_APPT_LIST_COLS).eq("attorney_id", current_user["id"])
     elif role == "admin":
-        query = supabase.table("appointments").select("*")
+        query = supabase.table("appointments").select(_APPT_LIST_COLS)
     else:
-        query = supabase.table("appointments").select("*").eq("user_id", current_user["id"])
+        query = supabase.table("appointments").select(_APPT_LIST_COLS).eq("user_id", current_user["id"])
 
     query = query.order("preferred_date", desc=False).order("preferred_time", desc=False)
 
@@ -109,8 +115,10 @@ def get_my_appointments(
     if date_to:
         query = query.lte("preferred_date", date_to)
 
-    result = query.execute()
-    return result.data or []
+    items = query.execute().data or []
+    response = JSONResponse(content=items)
+    response.headers["Cache-Control"] = "private, max-age=30"
+    return response
 
 
 @router.post(

@@ -1,10 +1,14 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi.responses import JSONResponse
 from typing import List, Optional
 from database import supabase
 import schemas
 import auth as auth_utils
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
+
+# List view excludes description (heavy text) — kept in detail endpoint
+_DOC_LIST_COLS = "id,title,file_url,file_type,file_size,case_id,uploaded_by,is_confidential,created_at"
 
 
 @router.post("", response_model=schemas.DocumentOut, summary="Upload/create a document record")
@@ -36,7 +40,7 @@ def get_documents(
     current_user: dict = Depends(auth_utils.get_current_user)
 ):
     role = current_user.get("role", "client")
-    query = supabase.table("documents").select("*").order("created_at", desc=True).range(skip, skip + limit - 1)
+    query = supabase.table("documents").select(_DOC_LIST_COLS).order("created_at", desc=True).range(skip, skip + limit - 1)
 
     if case_id:
         query = query.eq("case_id", case_id)
@@ -47,8 +51,10 @@ def get_documents(
             return []
         query = query.in_("case_id", case_ids)
 
-    result = query.execute()
-    return result.data or []
+    items = query.execute().data or []
+    response = JSONResponse(content=items)
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return response
 
 
 @router.get("/my", response_model=List[schemas.DocumentOut], summary="Get my documents")
@@ -57,8 +63,10 @@ def get_my_documents(current_user: dict = Depends(auth_utils.get_current_user)):
     case_ids = [c["id"] for c in (result_cases.data or [])]
     if not case_ids:
         return []
-    result = supabase.table("documents").select("*").in_("case_id", case_ids).order("created_at", desc=True).execute()
-    return result.data or []
+    items = supabase.table("documents").select(_DOC_LIST_COLS).in_("case_id", case_ids).order("created_at", desc=True).execute().data or []
+    response = JSONResponse(content=items)
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return response
 
 
 @router.get("/{doc_id}", response_model=schemas.DocumentOut, summary="Get document by ID")

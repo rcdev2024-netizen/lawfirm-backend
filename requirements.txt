@@ -9,3 +9,5 @@ python-dotenv==1.0.1
 pydantic[email]==2.6.4
 email-validator==2.1.1
 requests==2.31.0
+slowapi==0.1.9
+limits==3.6.0

@@ -1,10 +1,13 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from typing import Optional, List, Any, Dict
 from database import supabase
 import auth as auth_utils
 from datetime import date, timedelta
 import re
 import calendar as cal_module
+from main import limiter
+from fastapi import Request
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 
@@ -241,7 +244,7 @@ def execute_report(parsed: Dict[str, Any], role: str, uid: int) -> Dict[str, Any
         if entity == "cases":
             q = supabase.table("cases").select(
                 "id,case_number,case_name,case_type,status,court,judge,"
-                "next_hearing_date,next_hearing_time,filed_date,created_at,updated_at,"
+                "next_hearing_date,next_hearing_time,filed_date,created_at,"
                 "attorney:users!cases_attorney_id_fkey(full_name),"
                 "client:users!cases_client_id_fkey(full_name)"
             )
@@ -377,7 +380,8 @@ def execute_report(parsed: Dict[str, Any], role: str, uid: int) -> Dict[str, Any
 
 
 @router.post("/query", summary="Natural language report query")
-def run_report_query(body: dict, current_user: dict = Depends(auth_utils.get_current_user)):
+@limiter.limit("20/minute")
+def run_report_query(request: Request, body: dict, current_user: dict = Depends(auth_utils.get_current_user)):
     query = (body.get("query") or "").strip()
     if not query:
         raise HTTPException(status_code=400, detail="Query is required")

@@ -15,7 +15,10 @@ def get_dashboard_stats(current_user: dict = Depends(auth_utils.get_current_user
     role = current_user.get("role", "client")
 
     try:
-        result = supabase.table("dashboard_stats").select("*").eq("user_id", uid).execute()
+        result = supabase.table("dashboard_stats").select(
+            "active_cases,total_cases,cases_open,cases_in_progress,cases_review,cases_closed,"
+            "upcoming_appointments,unpaid_invoices,total_documents,unread_messages,unread_notifications"
+        ).eq("user_id", uid).execute()
         if result.data:
             row = result.data[0]
             return schemas.DashboardStats(
@@ -201,7 +204,7 @@ def get_dashboard_cases(
         supabase.table("cases")
         .select(
             "id,case_number,case_name,case_type,status,client_id,attorney_id,"
-            "next_hearing_date,next_hearing_time,updated_at,created_at,"
+            "next_hearing_date,next_hearing_time,created_at,"
             "attorney:users!cases_attorney_id_fkey(full_name),"
             "client:users!cases_client_id_fkey(full_name)"
         )

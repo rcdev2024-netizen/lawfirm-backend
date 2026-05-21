@@ -1,12 +1,19 @@
 ﻿import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard, roles, audit_logs, reports
 from routes.clients import router as clients_router
 from routes.attorneys import router as attorneys_router
 
 load_dotenv()
+
+# ── Rate limiter ──────────────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 app = FastAPI(
     title="Law Firm Portal API",
@@ -39,6 +46,9 @@ Include as: `Authorization: Bearer <token>`
     },
     license_info={"name": "Private"}
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

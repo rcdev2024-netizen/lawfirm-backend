@@ -2,12 +2,14 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends, 
 from database import supabase
 import schemas
 import auth as auth_utils
+from main import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
 @router.post("/register", response_model=schemas.Token, summary="Register a new user")
-def register(user_data: schemas.UserRegister):
+@limiter.limit("10/minute")
+def register(request: Request, user_data: schemas.UserRegister):
     existing = supabase.table("users").select("id").eq("email", user_data.email).execute()
     if existing.data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
@@ -49,7 +51,8 @@ def register(user_data: schemas.UserRegister):
 
 
 @router.post("/login", response_model=schemas.Token, summary="Login and get JWT token")
-def login(credentials: schemas.UserLogin, background_tasks: BackgroundTasks):
+@limiter.limit("10/minute")
+def login(request: Request, credentials: schemas.UserLogin, background_tasks: BackgroundTasks):
     result = (
         supabase.table("users")
         .select("id, full_name, email, hashed_password, phone, role_id, is_active, approval_status, created_at, roles!users_role_id_fkey(name)")

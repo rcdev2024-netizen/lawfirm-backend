@@ -1,10 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import JSONResponse
 from typing import List, Optional
 from database import supabase
 import schemas
 import auth as auth_utils
 
 router = APIRouter(prefix="/api/invoices", tags=["Invoices"])
+
+# Columns for list views — excludes notes (heavy text)
+_INVOICE_LIST_COLS = "id,invoice_number,client_id,case_id,amount,tax,total,status,due_date,paid_date,created_at"
 
 
 @router.post("", response_model=schemas.InvoiceOut, summary="Create invoice (admin/attorney)")
@@ -51,21 +55,29 @@ def get_invoices(
     current_user: dict = Depends(auth_utils.get_current_user)
 ):
     role = current_user.get("role", "client")
-    query = supabase.table("invoices").select("*").order("created_at", desc=True).range(skip, skip + limit - 1)
+    query = supabase.table("invoices").select(_INVOICE_LIST_COLS).order("created_at", desc=True).range(skip, skip + limit - 1)
 
     if role == "client":
         query = query.eq("client_id", current_user["id"])
     if inv_status:
         query = query.eq("status", inv_status)
 
-    result = query.execute()
-    return result.data or []
+    items = query.execute().data or []
+    response = JSONResponse(content=items)
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return response
 
 
 @router.get("/my", response_model=List[schemas.InvoiceOut], summary="Get my invoices")
-def get_my_invoices(current_user: dict = Depends(auth_utils.get_current_user)):
-    result = supabase.table("invoices").select("*").eq("client_id", current_user["id"]).order("created_at", desc=True).execute()
-    return result.data or []
+def get_my_invoices(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(auth_utils.get_current_user)
+):
+    items = supabase.table("invoices").select(_INVOICE_LIST_COLS).eq("client_id", current_user["id"]).order("created_at", desc=True).range(skip, skip + limit - 1).execute().data or []
+    response = JSONResponse(content=items)
+    response.headers["Cache-Control"] = "private, max-age=60"
+    return response
 
 
 @router.get("/{invoice_id}", response_model=schemas.InvoiceOut, summary="Get invoice by ID")

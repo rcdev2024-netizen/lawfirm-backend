@@ -1,10 +1,14 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query
+from fastapi.responses import JSONResponse
 from typing import List, Optional
 from database import supabase
 import schemas
 import auth as auth_utils
 
 router = APIRouter(prefix="/api/messages", tags=["Messages"])
+
+# List view excludes body — only fetched when opening a single message
+_MSG_LIST_COLS = "id,sender_id,recipient_id,case_id,subject,is_read,parent_id,created_at"
 
 
 @router.post("", response_model=schemas.MessageOut, summary="Send a message")
@@ -44,15 +48,17 @@ def get_inbox(
     limit: int = Query(50, ge=1, le=200),
     current_user: dict = Depends(auth_utils.get_current_user)
 ):
-    result = (
+    items = (
         supabase.table("messages")
-        .select("*")
+        .select(_MSG_LIST_COLS)
         .eq("recipient_id", current_user["id"])
         .order("created_at", desc=True)
         .range(skip, skip + limit - 1)
         .execute()
-    )
-    return result.data or []
+    ).data or []
+    response = JSONResponse(content=items)
+    response.headers["Cache-Control"] = "private, max-age=30"
+    return response
 
 
 @router.get("/sent", response_model=List[schemas.MessageOut], summary="Get sent messages")
@@ -61,15 +67,17 @@ def get_sent(
     limit: int = Query(50, ge=1, le=200),
     current_user: dict = Depends(auth_utils.get_current_user)
 ):
-    result = (
+    items = (
         supabase.table("messages")
-        .select("*")
+        .select(_MSG_LIST_COLS)
         .eq("sender_id", current_user["id"])
         .order("created_at", desc=True)
         .range(skip, skip + limit - 1)
         .execute()
-    )
-    return result.data or []
+    ).data or []
+    response = JSONResponse(content=items)
+    response.headers["Cache-Control"] = "private, max-age=30"
+    return response
 
 
 @router.patch("/{message_id}/read", response_model=schemas.MessageOut, summary="Mark message as read")
