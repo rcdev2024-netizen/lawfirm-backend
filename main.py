@@ -8,6 +8,7 @@ from limiter import limiter
 from routes import auth, appointments, cases, documents, messages, notifications, invoices, dashboard, roles, audit_logs, reports
 from routes.clients import router as clients_router
 from routes.attorneys import router as attorneys_router
+from routes.client_intake import router as client_intake_router
 
 load_dotenv()
 
@@ -21,7 +22,7 @@ ALLOWED_ORIGINS = [
 app = FastAPI(
     title="Law Firm Portal API",
     description="Law Firm Portal API — client, attorney, and admin dashboards.",
-    version="2.2.0",
+    version="2.3.0",
     contact={"name": "Atty Rochelle Cortez-Naz Law Firm", "email": "attyrochellecortez.naz@gmail.com"},
     license_info={"name": "Private"}
 )
@@ -66,16 +67,17 @@ app.include_router(clients_router)
 app.include_router(attorneys_router)
 app.include_router(audit_logs.router)
 app.include_router(reports.router)
+app.include_router(client_intake_router)
 
 
 @app.on_event("startup")
 def on_startup():
-    print("Law Firm Portal API v2.2 started.")
+    print("Law Firm Portal API v2.3 started.")
 
 
 @app.get("/", tags=["Health"])
 def root():
-    return {"message": "Law Firm Portal API is running", "version": "2.2.0", "docs": "/docs"}
+    return {"message": "Law Firm Portal API is running", "version": "2.3.0", "docs": "/docs"}
 
 
 @app.get("/health", tags=["Health"])
@@ -86,4 +88,4 @@ def health():
         db_status = "connected"
     except Exception as e:
         db_status = f"error: {str(e)}"
-    return {"status": "healthy" if db_status == "connected" else "degraded", "version": "2.2.0", "supabase": db_status}
+    return {"status": "healthy" if db_status == "connected" else "degraded", "version": "2.3.0", "supabase": db_status}

@@ -14,11 +14,11 @@ def register(request: Request, user_data: schemas.UserRegister):
     if existing.data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
-    role_name = user_data.role or "client"
+    # Public registration is always client — staff roles are created by admin only
+    role_name = "client"
     role_id = auth_utils.get_role_id(role_name)
     if not role_id:
-        role_id = auth_utils.get_role_id("client")
-        role_name = "client"
+        raise HTTPException(status_code=500, detail="Client role not found in database")
 
     hashed_pw = auth_utils.get_password_hash(user_data.password)
     approval_status = "pending" if role_name == "client" else "approved"
