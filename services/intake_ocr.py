@@ -69,50 +69,315 @@ def _confidence_level(score: float) -> str:
     return "low"
 
 
-def _heuristic_extract(raw_text: str) -> Tuple[Dict[str, Any], Dict[str, float]]:
-    """Rule-based fallback when no AI OCR provider is configured."""
+# ── Label → camelCase field mapping ──────────────────────────────────────────
+# Covers all labels that appear on Philippine law firm intake forms
+_LABEL_MAP: Dict[str, str] = {
+    "LAST NAME":                   "lastName",
+    "FIRST NAME":                  "firstName",
+    "MIDDLE NAME":                 "middleName",
+    "SUFFIX":                      "suffix",
+    "DATE OF BIRTH":               "birthDate",
+    "BIRTH DATE":                  "birthDate",
+    "GENDER":                      "gender",
+    "SEX":                         "gender",
+    "CIVIL STATUS":                "civilStatus",
+    "MARITAL STATUS":              "civilStatus",
+    "NATIONALITY":                 "nationality",
+    "CITIZENSHIP":                 "nationality",
+    "PLACE OF BIRTH":              "placeOfBirth",
+    "OCCUPATION":                  "occupation",
+    "PROFESSION":                  "occupation",
+    "EMAIL ADDRESS":               "email",
+    "EMAIL":                       "email",
+    "PHONE NUMBER":                "phoneNumber",
+    "CONTACT NUMBER":              "phoneNumber",
+    "MOBILE NUMBER":               "phoneNumber",
+    "TELEPHONE":                   "phoneNumber",
+    "ALTERNATE PHONE":             "alternatePhone",
+    "ALTERNATE CONTACT":           "alternatePhone",
+    "HOME ADDRESS":                "address",
+    "ADDRESS":                     "address",
+    "STREET ADDRESS":              "address",
+    "BARANGAY":                    "barangay",
+    "BRGY":                        "barangay",
+    "CITY / MUNICIPALITY":         "city",
+    "CITY":                        "city",
+    "MUNICIPALITY":                "city",
+    "PROVINCE":                    "province",
+    "ZIP CODE":                    "zipCode",
+    "POSTAL CODE":                 "zipCode",
+    "COUNTRY":                     "country",
+    "TYPE OF LEGAL CONCERN":       "caseType",
+    "LEGAL CONCERN":               "caseType",
+    "CASE TYPE":                   "caseType",
+    "PRIORITY LEVEL":              "priorityLevel",
+    "REFERRED BY":                 "referredBy",
+    "NOTES / BRIEF DESCRIPTION":   "notes",
+    "NOTES":                       "notes",
+    "BRIEF DESCRIPTION":           "notes",
+    "DESCRIPTION":                 "notes",
+}
+
+# Fields that can appear multiple on the same header line (positional split)
+_POSITIONAL_GROUPS = [
+    ["lastName", "firstName", "middleName", "suffix"],
+    ["birthDate", "gender", "civilStatus", "nationality"],
+    ["email", "phoneNumber", "alternatePhone"],
+    ["city", "province", "zipCode", "country"],
+]
+
+
+def _is_header_line(line: str) -> bool:
+    """A header line is ALL CAPS (allowing spaces, slashes, punctuation) with no digits."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    # Must be mostly uppercase letters
+    letters = [c for c in stripped if c.isalpha()]
+    if not letters:
+        return False
+    upper_ratio = sum(1 for c in letters if c.isupper()) / len(letters)
+    return upper_ratio >= 0.85 and len(stripped) >= 3
+
+
+def _normalize_label(label: str) -> str:
+    """Normalize a label token for lookup."""
+    return re.sub(r"\s+", " ", label.strip().upper())
+
+
+def _parse_header_line(line: str) -> List[str]:
+    """
+    Split a header line like 'LAST NAME FIRST NAME MIDDLE NAME SUFFIX'
+    into individual label tokens using the known label map.
+    Returns list of matched label strings in left-to-right order.
+    """
+    normalized = _normalize_label(line)
+    found: List[tuple] = []  # (start_pos, end_pos, label_key)
+
+    # Try to match known labels by scanning the normalized line
+    for label in sorted(_LABEL_MAP.keys(), key=len, reverse=True):
+        start = 0
+        while True:
+            idx = normalized.find(label, start)
+            if idx == -1:
+                break
+            # Make sure it's not overlapping with already found labels
+            overlap = any(s <= idx < e or s < idx + len(label) <= e for s, e, _ in found)
+            if not overlap:
+                found.append((idx, idx + len(label), label))
+            start = idx + 1
+
+    found.sort(key=lambda x: x[0])
+    return [f[2] for f in found]
+
+
+# How many tokens each field typically consumes in a multi-column value line
+_FIELD_TOKEN_BUDGET: Dict[str, int] = {
+    "birthDate":      3,   # "March 15, 1985" = 3 tokens
+    "gender":         1,
+    "civilStatus":    1,
+    "nationality":    1,
+    "lastName":       1,   # Note: compound surnames handled by OpenAI fallback
+    "firstName":      1,
+    "middleName":     1,
+    "suffix":         1,
+    "email":          1,
+    "phoneNumber":    1,
+    "alternatePhone": 1,
+    "city":           2,   # "Legazpi City", "San Pablo City" = 2 tokens
+    "province":       1,
+    "zipCode":        1,
+    "country":        1,
+}
+
+
+def _split_value_line(value_line: str, labels: List[str]) -> Dict[str, str]:
+    """
+    Split a value line positionally using per-field token budgets.
+    Multi-space split is tried first (printed/typed column-aligned forms).
+    Falls back to token-budget split for Tesseract single-space output.
+    """
+    result: Dict[str, str] = {}
+    if not labels or not value_line.strip():
+        return result
+
+    # Try multi-space split first
+    parts = re.split(r"\s{2,}", value_line.strip())
+    if len(parts) >= len(labels):
+        for i, label in enumerate(labels):
+            field = _LABEL_MAP.get(label)
+            if field and i < len(parts) and parts[i].strip():
+                result[field] = parts[i].strip()
+        return result
+
+    # Single label — whole line is the value
+    if len(labels) == 1:
+        field = _LABEL_MAP.get(labels[0])
+        if field:
+            result[field] = value_line.strip()
+        return result
+
+    # Token-budget split
+    tokens = value_line.strip().split()
+    if not tokens:
+        return result
+
+    idx = 0
+    for i, label in enumerate(labels):
+        field = _LABEL_MAP.get(label)
+        if not field or idx >= len(tokens):
+            continue
+        is_last = (i == len(labels) - 1)
+        if is_last:
+            chunk = tokens[idx:]
+        else:
+            budget = _FIELD_TOKEN_BUDGET.get(field, 1)
+            chunk = tokens[idx: idx + budget]
+        if chunk:
+            result[field] = " ".join(chunk)
+        idx += len(chunk)
+
+    return result
+
+
+def _parse_birth_date(raw: str) -> str:
+    """Normalize birth date to YYYY-MM-DD."""
+    raw = raw.strip()
+    # Already ISO
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
+        return raw
+    # Month name formats: March 15, 1985 / 15 March 1985
+    months = {
+        "january": 1, "february": 2, "march": 3, "april": 4,
+        "may": 5, "june": 6, "july": 7, "august": 8,
+        "september": 9, "october": 10, "november": 11, "december": 12,
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6,
+        "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    }
+    m = re.match(r"([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})", raw)
+    if m:
+        mon, day, year = m.groups()
+        mn = months.get(mon.lower())
+        if mn:
+            return f"{year}-{mn:02d}-{int(day):02d}"
+    m = re.match(r"(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})", raw)
+    if m:
+        day, mon, year = m.groups()
+        mn = months.get(mon.lower())
+        if mn:
+            return f"{year}-{mn:02d}-{int(day):02d}"
+    # Numeric: MM/DD/YYYY or DD/MM/YYYY
+    m = re.match(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})", raw)
+    if m:
+        a, b, y = m.groups()
+        y = y if len(y) == 4 else (f"19{y}" if int(y) > 30 else f"20{y}")
+        return f"{y}-{int(a):02d}-{int(b):02d}"
+    return raw
+
+
+def _form_aware_extract(raw_text: str) -> Tuple[Dict[str, Any], Dict[str, float]]:
+    """
+    Primary extractor for structured Philippine intake forms.
+    Treats ALL CAPS lines as headers and the line immediately after as values.
+    Handles multi-label header lines with positional value splitting.
+    """
     fields: Dict[str, Any] = {}
     confidence: Dict[str, float] = {}
 
-    patterns = {
-        "email": (r"[\w.+-]+@[\w.-]+\.\w+", "email", 0.9),
-        "phoneNumber": (r"(?:\+63|0)?9\d{9}", "phoneNumber", 0.75),
-        "birthDate": (r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})\b", "birthDate", 0.5),
-    }
-    for key, (pat, field, conf) in patterns.items():
-        m = re.search(pat, raw_text, re.I)
-        if m and field not in fields:
-            if field == "birthDate":
-                d, mo, y = m.groups()
-                y = y if len(y) == 4 else f"19{y}" if int(y) > 30 else f"20{y}"
-                fields[field] = f"{y}-{int(mo):02d}-{int(d):02d}"
-            else:
-                fields[field] = m.group(0)
-            confidence[field] = conf
+    lines = [l.rstrip() for l in raw_text.splitlines()]
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if not line.strip():
+            i += 1
+            continue
 
-    name_match = re.search(
-        r"(?:name|client)[:\s]+([A-Za-z]+(?:\s+[A-Za-z.]+){1,4})",
-        raw_text,
-        re.I,
-    )
-    if name_match:
-        parts = name_match.group(1).split()
-        if len(parts) >= 2:
-            fields["firstName"] = parts[0]
-            fields["lastName"] = parts[-1]
-            if len(parts) > 2:
-                fields["middleName"] = " ".join(parts[1:-1])
-            confidence["firstName"] = 0.55
-            confidence["lastName"] = 0.55
+        if _is_header_line(line):
+            labels = _parse_header_line(line)
+            if not labels:
+                i += 1
+                continue
 
-    case_match = re.search(
-        r"(family|criminal|civil|labor|corporate|immigration|annulment|divorce)",
-        raw_text,
-        re.I,
-    )
-    if case_match:
-        fields["caseType"] = case_match.group(1).title()
-        confidence["caseType"] = 0.6
+            # Collect value lines (skip blank, stop at next header)
+            value_lines = []
+            j = i + 1
+            while j < len(lines):
+                vl = lines[j]
+                if not vl.strip():
+                    j += 1
+                    continue
+                if _is_header_line(vl):
+                    break
+                value_lines.append(vl)
+                j += 1
+                # Only take first non-blank value line for positional split
+                if len(labels) > 1:
+                    break
+
+            if value_lines:
+                value_line = value_lines[0]
+                if len(labels) == 1:
+                    field = _LABEL_MAP.get(labels[0])
+                    if field and value_line.strip():
+                        val = value_line.strip()
+                        if field == "birthDate":
+                            val = _parse_birth_date(val)
+                        fields[field] = val
+                        confidence[field] = 0.88
+                else:
+                    mapped = _split_value_line(value_line, labels)
+                    for field, val in mapped.items():
+                        if val and field not in fields:
+                            if field == "birthDate":
+                                val = _parse_birth_date(val)
+                            fields[field] = val
+                            confidence[field] = 0.85
+
+            i = j
+        else:
+            i += 1
+
+    return fields, confidence
+
+
+def _heuristic_extract(raw_text: str) -> Tuple[Dict[str, Any], Dict[str, float]]:
+    """
+    Two-pass extractor:
+    1. Form-aware parser (handles structured ALL CAPS label/value forms)
+    2. Regex fallback for any fields not yet found
+    """
+    # Pass 1: structured form parser
+    fields, confidence = _form_aware_extract(raw_text)
+
+    # Pass 2: regex fallback for fields still missing
+    if "email" not in fields:
+        m = re.search(r"[\w.+-]+@[\w.-]+\.\w+", raw_text)
+        if m:
+            fields["email"] = m.group(0)
+            confidence["email"] = 0.9
+
+    if "phoneNumber" not in fields:
+        m = re.search(r"(?:\+63|0)9\d{2}[-.\s]?\d{3}[-.\s]?\d{4}", raw_text)
+        if m:
+            fields["phoneNumber"] = m.group(0)
+            confidence["phoneNumber"] = 0.75
+
+    if "birthDate" not in fields:
+        m = re.search(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})\b", raw_text)
+        if m:
+            d, mo, y = m.groups()
+            y = y if len(y) == 4 else f"19{y}" if int(y) > 30 else f"20{y}"
+            fields["birthDate"] = f"{y}-{int(mo):02d}-{int(d):02d}"
+            confidence["birthDate"] = 0.5
+
+    if "caseType" not in fields:
+        m = re.search(
+            r"\b(family|criminal|civil|labor|corporate|immigration|annulment|divorce)\b",
+            raw_text, re.I,
+        )
+        if m:
+            fields["caseType"] = m.group(1).title()
+            confidence["caseType"] = 0.6
 
     return fields, confidence
 
