@@ -34,18 +34,25 @@ from schemas_intake import (
     IntakeSuggestionsRequest,
     IntakeUploadOut,
     OcrMapFromTextRequest,
+    OcrProcessOut,
     OcrProcessRequest,
     PaginatedIntakeDraftsOut,
 )
 from services.intake_ai import build_suggestions, check_duplicates, classify_case
 from services.intake_helpers import (
     build_full_name,
-    draft_data_to_dict,
     generate_temp_password,
     merge_draft_data,
+    merge_raw_draft_payload,
     normalize_phone,
+    resolve_valid_ids_uploads,
     validate_finalize,
-    validate_step,
+)
+from services.intake_validation import (
+    raise_validation_422,
+    validate_sections,
+    validate_step_only,
+    validation_errors_for_response,
 )
 from services.intake_ocr import format_extraction_response, process_text_ocr, process_upload_ocr
 from services.intake_storage import upload_intake_file
@@ -64,6 +71,28 @@ def _get_client_role_id() -> int:
     if not result.data:
         raise HTTPException(status_code=500, detail="Client role not found")
     return result.data[0]["id"]
+
+
+def _sections_in_payload(draft_data: Optional[dict]) -> list:
+    if not draft_data:
+        return []
+    return [k for k in draft_data if k in ("personal", "contact", "valid_ids", "case_info")]
+
+
+def _validate_patch_payload(
+    incoming: dict,
+    merged: dict,
+    current_step: Optional[int],
+) -> None:
+    """Validate only sections sent in PATCH, else the active step only."""
+    sections = _sections_in_payload(incoming)
+    if sections:
+        errors = validate_sections(merged, sections)
+    else:
+        step = current_step or 1
+        errors = validate_step_only(step, merged)
+    if errors:
+        raise_validation_422(errors)
 
 
 def _log_ai(draft_id: Optional[int], action: str, performed_by: int, output: dict, inp: str = ""):
@@ -86,11 +115,15 @@ def create_draft(
     body: IntakeDraftCreate,
     user: dict = Depends(require_admin_or_attorney),
 ):
-    draft_data = draft_data_to_dict(body.draft_data) if body.draft_data else {}
-    if body.current_step >= 1 and draft_data:
-        errs = validate_step(body.current_step, draft_data)
-        if errs:
-            raise HTTPException(status_code=400, detail={"errors": errs})
+    draft_data = body.draft_data or {}
+    if draft_data:
+        sections = _sections_in_payload(draft_data)
+        if sections:
+            errors = validate_sections(draft_data, sections)
+        else:
+            errors = validate_step_only(body.current_step, draft_data)
+        if errors:
+            raise_validation_422(errors)
 
     row = supabase.table("client_intake_drafts").insert({
         "created_by": user["id"],
@@ -168,11 +201,9 @@ def update_draft(
     if body.status is not None:
         update_payload["status"] = body.status
     if body.draft_data is not None:
-        merged = merge_draft_data(d.get("draft_data") or {}, draft_data_to_dict(body.draft_data))
-        step = body.current_step or d.get("current_step", 1)
-        errs = validate_step(step, merged)
-        if errs:
-            raise HTTPException(status_code=400, detail={"errors": errs})
+        incoming = body.draft_data or {}
+        merged = merge_raw_draft_payload(d.get("draft_data") or {}, incoming)
+        _validate_patch_payload(incoming, merged, body.current_step or d.get("current_step"))
         update_payload["draft_data"] = merged
 
     if not update_payload:
@@ -200,13 +231,18 @@ def validate_draft_step(
     user: dict = Depends(require_admin_or_attorney),
 ):
     d = get_draft(draft_id, user)
-    errors = validate_step(step, d.get("draft_data") or {})
-    return {"step": step, "valid": len(errors) == 0, "errors": errors}
+    errors = validate_step_only(step, d.get("draft_data") or {})
+    return {"step": step, **validation_errors_for_response(errors)}
 
 
 # ── FILE UPLOADS ──────────────────────────────────────────────
 
-@router.post("/uploads", response_model=IntakeUploadOut, summary="Upload intake file (multipart)")
+@router.post(
+    "/uploads",
+    response_model=IntakeUploadOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload intake file (multipart)",
+)
 @limiter.limit("30/minute")
 async def upload_file(
     request: Request,
@@ -260,28 +296,38 @@ async def upload_file(
 
 # ── OCR WORKFLOW ──────────────────────────────────────────────
 
-@router.post("/ocr/process", response_model=IntakeExtractionOut)
+@router.post("/ocr/process", response_model=OcrProcessOut)
 @limiter.limit("15/minute")
 def run_ocr_process(
     request: Request,
     body: OcrProcessRequest,
     user: dict = Depends(require_admin_or_attorney),
 ):
+    if not body.draft_id:
+        raise HTTPException(status_code=400, detail="draft_id is required for OCR processing")
     try:
         ext = process_upload_ocr(body.upload_id, body.draft_id, user["id"])
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except RuntimeError as e:
+        logger.exception("ocr process failed")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
-    if body.draft_id:
-        supabase.table("client_intake_drafts").update({
-            "extraction_id": ext["id"],
-            "intake_upload_id": body.upload_id,
-            "source": "ocr",
-        }).eq("id", body.draft_id).execute()
+    supabase.table("client_intake_drafts").update({
+        "extraction_id": ext["id"],
+        "intake_upload_id": body.upload_id,
+        "source": "ocr",
+    }).eq("id", body.draft_id).execute()
 
-    return format_extraction_response(ext)
+    eid = ext["id"]
+    st = ext.get("status") or "processing"
+    if st == "completed":
+        st = "completed"
+    elif st == "failed":
+        st = "failed"
+    else:
+        st = "processing"
+    return OcrProcessOut(id=eid, extraction_id=eid, status=st)
 
 
 @router.post("/ocr/map-from-text", response_model=IntakeExtractionOut)
@@ -356,7 +402,7 @@ def ai_classify_case(body: CaseClassifyRequest, user: dict = Depends(require_adm
 
 @router.post("/ai/suggestions", response_model=IntakeSuggestionsOut)
 def ai_suggestions(body: IntakeSuggestionsRequest, user: dict = Depends(require_admin_or_attorney)):
-    suggestions, ready = build_suggestions(body.draft_data)
+    suggestions, ready = build_suggestions(body.draft_data, body.current_step)
     return {"suggestions": suggestions, "is_ready_to_finalize": ready}
 
 
@@ -378,7 +424,7 @@ def finalize_draft(draft_id: int, user: dict = Depends(require_admin_or_attorney
 
     personal = raw.get("personal") or {}
     contact = raw.get("contact") or {}
-    valid_ids = raw.get("valid_ids") or {}
+    valid_ids = resolve_valid_ids_uploads(raw.get("valid_ids") or {})
     case_info = raw.get("case_info") or {}
 
     email = contact.get("email")
@@ -504,6 +550,7 @@ def finalize_draft(draft_id: int, user: dict = Depends(require_admin_or_attorney
     _log_ai(draft_id, "finalize", user["id"], {"user_id": uid})
 
     return {
+        "client_id": uid,
         "user_id": uid,
         "email": email,
         "full_name": full_name,

@@ -41,13 +41,16 @@ class ValidIdItem(BaseModel):
 
 class ValidIdsStep(BaseModel):
     profile_photo_url: Optional[str] = None
+    profile_photo_upload_id: Optional[int] = None
     photo_metadata: Optional[Dict[str, Any]] = None
-    primary_id_type: str
-    primary_id_number: str
+    primary_id_type: Optional[str] = None
+    primary_id_number: Optional[str] = None
     primary_id_image_url: Optional[str] = None
+    primary_id_image_upload_id: Optional[int] = None
     secondary_id_type: Optional[str] = None
     secondary_id_number: Optional[str] = None
     secondary_id_image_url: Optional[str] = None
+    secondary_id_image_upload_id: Optional[int] = None
 
 
 class CaseInfoStep(BaseModel):
@@ -73,12 +76,12 @@ class IntakeDraftData(BaseModel):
 class IntakeDraftCreate(BaseModel):
     source: Literal["manual", "ocr"] = "manual"
     current_step: int = Field(1, ge=1, le=4)
-    draft_data: Optional[IntakeDraftData] = None
+    draft_data: Optional[Dict[str, Any]] = None
 
 
 class IntakeDraftUpdate(BaseModel):
     current_step: Optional[int] = Field(None, ge=1, le=4)
-    draft_data: Optional[IntakeDraftData] = None
+    draft_data: Optional[Dict[str, Any]] = None
     status: Optional[Literal["draft", "abandoned"]] = None
 
 
@@ -109,6 +112,7 @@ class PaginatedIntakeDraftsOut(BaseModel):
 class IntakeUploadOut(BaseModel):
     id: int
     upload_id: int
+    url: Optional[str] = None
     file_name: str
     file_type: Optional[str] = None
     file_size: Optional[int] = None
@@ -121,7 +125,20 @@ class IntakeUploadOut(BaseModel):
     @classmethod
     def from_row(cls, row: dict) -> "IntakeUploadOut":
         uid = row["id"]
-        return cls(upload_id=uid, id=uid, **{k: v for k, v in row.items() if k != "id"})
+        url = row.get("public_url") or row.get("storage_path")
+        return cls(
+            id=uid,
+            upload_id=uid,
+            url=url,
+            file_name=row["file_name"],
+            file_type=row.get("file_type"),
+            file_size=row.get("file_size"),
+            storage_path=row["storage_path"],
+            public_url=row.get("public_url"),
+            upload_category=row["upload_category"],
+            draft_id=row.get("draft_id"),
+            created_at=row.get("created_at"),
+        )
 
 
 class OcrProcessRequest(BaseModel):
@@ -136,16 +153,25 @@ class OcrMapFromTextRequest(BaseModel):
 
 class ExtractionFieldOut(BaseModel):
     field: str
+    label: Optional[str] = None
     value: Any
     confidence: float
-    level: Literal["high", "medium", "low"]
+    level: Optional[Literal["high", "medium", "low"]] = None
+
+
+class OcrProcessOut(BaseModel):
+    id: int
+    extraction_id: int
+    status: str = "processing"
 
 
 class IntakeExtractionOut(BaseModel):
     id: int
+    extraction_id: Optional[int] = None
     upload_id: Optional[int] = None
     draft_id: Optional[int] = None
     status: str
+    openai_available: bool = False
     raw_text: Optional[str] = None
     extracted_fields: Dict[str, Any]
     field_confidence: Dict[str, float]
@@ -201,7 +227,8 @@ class CaseClassifyOut(BaseModel):
 
 
 class IntakeSuggestionsRequest(BaseModel):
-    draft_data: Dict[str, Any]
+    draft_data: Dict[str, Any] = Field(default_factory=dict)
+    current_step: int = Field(1, ge=1, le=4)
 
 
 class IntakeSuggestion(BaseModel):
@@ -218,12 +245,13 @@ class IntakeSuggestionsOut(BaseModel):
 # ── Finalize & profile ────────────────────────────────────────
 
 class IntakeFinalizeOut(BaseModel):
+    client_id: int
     user_id: int
     email: str
     full_name: str
     temporary_password: Optional[str] = None
-    client_profile: Dict[str, Any]
-    message: str
+    client_profile: Optional[Dict[str, Any]] = None
+    message: str = "Client created successfully."
 
 
 class ClientProfileOut(BaseModel):

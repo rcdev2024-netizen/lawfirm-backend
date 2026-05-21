@@ -21,6 +21,32 @@ FIELD_KEYS = [
     "caseType", "caseCategory", "notes", "referredBy",
 ]
 
+FIELD_LABELS = {
+    "firstName": "First Name",
+    "middleName": "Middle Name",
+    "lastName": "Last Name",
+    "suffix": "Suffix",
+    "gender": "Gender",
+    "birthDate": "Birth Date",
+    "civilStatus": "Civil Status",
+    "nationality": "Nationality",
+    "placeOfBirth": "Place of Birth",
+    "occupation": "Occupation",
+    "email": "Email",
+    "phoneNumber": "Phone Number",
+    "alternatePhone": "Alternate Phone",
+    "address": "Address",
+    "barangay": "Barangay",
+    "city": "City",
+    "province": "Province",
+    "zipCode": "ZIP Code",
+    "country": "Country",
+    "caseType": "Case Type",
+    "caseCategory": "Case Category",
+    "notes": "Notes",
+    "referredBy": "Referred By",
+}
+
 EXTRACTION_PROMPT = """You are extracting data from a Philippine law firm CLIENT REGISTRATION FORM.
 Return ONLY valid JSON with this structure:
 {
@@ -259,19 +285,36 @@ def format_extraction_response(ext: dict) -> dict:
     for key in FIELD_KEYS:
         if key not in fields:
             continue
-        score = float(conf.get(key, 0.7))
+        score_raw = float(conf.get(key, 0.7))
+        score_pct = round(score_raw * 100 if score_raw <= 1 else score_raw)
         field_list.append({
             "field": key,
+            "label": FIELD_LABELS.get(key, key),
             "value": fields[key],
-            "confidence": score,
-            "level": _confidence_level(score),
+            "confidence": score_pct,
+            "level": _confidence_level(score_raw if score_raw <= 1 else score_raw / 100),
         })
     msg = ext.get("error_message")
     if not msg and ext.get("status") == "requires_review":
         msg = "Review all fields before saving. AI assists extraction only."
 
+    ext_id = ext.get("id")
+    status = ext.get("status") or "pending"
+    if status == "completed":
+        status = "completed"
+    elif status in ("pending", "processing"):
+        status = status
+    elif status == "failed":
+        status = "failed"
+    else:
+        status = "processing" if not field_list else "completed"
+
     return {
         **ext,
+        "id": ext_id,
+        "extraction_id": ext_id,
+        "status": status,
         "fields": field_list,
+        "openai_available": bool(OPENAI_API_KEY),
         "message": msg,
     }

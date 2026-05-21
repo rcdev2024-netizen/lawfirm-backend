@@ -107,63 +107,55 @@ def parse_draft_data(raw: Dict[str, Any]) -> IntakeDraftData:
     )
 
 
-def validate_step(step: int, raw: Dict[str, Any]) -> List[str]:
-    errors: List[str] = []
-    data = parse_draft_data(raw)
+def merge_raw_draft_payload(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge partial PATCH body (only sections present in incoming)."""
+    return merge_draft_data(existing or {}, incoming or {}, overwrite=False)
 
-    if step >= 1:
-        if not data.personal:
-            errors.append("Step 1: personal information is required")
-        else:
-            p = data.personal
-            if not p.first_name:
-                errors.append("firstName is required")
-            if not p.last_name:
-                errors.append("lastName is required")
-            if not p.birth_date:
-                errors.append("birthDate is required")
-            if not p.nationality:
-                errors.append("nationality is required")
 
-    if step >= 2:
-        if not data.contact:
-            errors.append("Step 2: contact information is required")
-        else:
-            c = data.contact
-            if not EMAIL_RE.match(str(c.email)):
-                errors.append("Invalid email format")
-            if not c.phone_number:
-                errors.append("phoneNumber is required")
-            elif not PH_PHONE_RE.match(normalize_phone(c.phone_number).replace(" ", "")):
-                errors.append("phoneNumber should be a valid Philippine mobile number")
-            if not c.address:
-                errors.append("address is required")
+def resolve_upload_public_url(upload_id: int) -> Optional[str]:
+    from database import get_supabase
 
-    if step >= 3:
-        if not data.valid_ids:
-            errors.append("Step 3: valid ID information is required")
-        else:
-            v = data.valid_ids
-            if not v.primary_id_type:
-                errors.append("primaryIdType is required")
-            if not v.primary_id_number:
-                errors.append("primaryIdNumber is required")
+    row = (
+        get_supabase()
+        .table("intake_uploads")
+        .select("public_url, storage_path")
+        .eq("id", upload_id)
+        .execute()
+    )
+    if not row.data:
+        return None
+    u = row.data[0]
+    if u.get("public_url"):
+        return u["public_url"]
+    return u.get("storage_path")
 
-    if step >= 4:
-        if not data.case_info:
-            errors.append("Step 4: case information is required")
-        elif not data.case_info.case_type:
-            errors.append("caseType is required")
 
-    return errors
+def resolve_valid_ids_uploads(valid_ids: Dict[str, Any]) -> Dict[str, Any]:
+    """Map FE upload IDs to URLs for finalize."""
+    out = dict(valid_ids or {})
+    pairs = (
+        ("profile_photo_upload_id", "profile_photo_url"),
+        ("primary_id_image_upload_id", "primary_id_image_url"),
+        ("secondary_id_image_upload_id", "secondary_id_image_url"),
+    )
+    for upload_key, url_key in pairs:
+        uid = out.get(upload_key)
+        if uid and not out.get(url_key):
+            try:
+                url = resolve_upload_public_url(int(uid))
+                if url:
+                    out[url_key] = url
+            except (TypeError, ValueError):
+                pass
+    return out
 
 
 def validate_finalize(raw: Dict[str, Any]) -> None:
-    errors = validate_step(4, raw)
-    if not raw.get("contact", {}).get("email"):
-        errors.append("email is required to create portal account")
+    from services.intake_validation import raise_validation_422, validate_all_steps
+
+    errors = validate_all_steps(raw)
     if errors:
-        raise HTTPException(status_code=400, detail={"message": "Validation failed", "errors": errors})
+        raise_validation_422(errors)
 
 
 def extraction_to_draft_fields(extracted: Dict[str, Any]) -> Dict[str, Any]:
@@ -234,12 +226,25 @@ def merge_draft_data(
     for section in ("personal", "contact", "valid_ids", "case_info"):
         if section not in incoming:
             continue
+        incoming_section = incoming[section] or {}
         if overwrite or section not in result:
-            result[section] = incoming[section]
+            result[section] = dict(incoming_section)
         else:
             base = dict(result.get(section) or {})
-            for k, v in (incoming[section] or {}).items():
-                if v is not None and (overwrite or not base.get(k)):
+            for k, v in incoming_section.items():
+                if v is not None and (overwrite or v != "" or k not in base):
                     base[k] = v
             result[section] = base
+    if incoming.get("password"):
+        result["password"] = incoming["password"]
+    # Auto full_name when personal names change
+    p = result.get("personal") or {}
+    if p.get("first_name") and p.get("last_name"):
+        p["full_name"] = build_full_name(
+            p.get("first_name", ""),
+            p.get("middle_name"),
+            p.get("last_name", ""),
+            p.get("suffix"),
+        )
+        result["personal"] = p
     return result

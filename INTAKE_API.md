@@ -1,77 +1,118 @@
-# Client Intake API (v2.3)
+# Client Intake API (v2.3) — Angular-aligned
 
-Run `migration_client_intake.sql` in Supabase, then create a **private** Storage bucket named `intake-uploads`.
+Run `migration_client_intake.sql` + `migration_client_intake_upload_fix.sql` in Supabase.  
+Create private Storage bucket: **`intake-uploads`**.
 
 ## Auth
 
-All endpoints require `Authorization: Bearer <JWT>` and role `admin` or `attorney`.
+- Base path: **`/api/intake/*`**
+- Header: `Authorization: Bearer <JWT>`
+- Roles: **`admin`** or **`attorney`** only
 
-### Upload endpoint
+## PATCH drafts — partial step saves
 
-- **URL:** `POST /api/intake/uploads`
-- **Multipart:** `file` (required), `draft_id` (optional), `category` (default `intake_form`)
-- **OCR flow:** use `category=ocr_document`
-- **Success:** JSON includes `id` and `upload_id` (same integer)
-- **DB fix:** if `ocr_document` caused 500 before, run `migration_client_intake_upload_fix.sql` in Supabase
-
-## Manual wizard flow
-
-1. `POST /api/intake/drafts` — start draft (`source: "manual"`)
-2. `PATCH /api/intake/drafts/{id}` — save step data in `draft_data` (personal, contact, valid_ids, case_info)
-3. `POST /api/intake/drafts/{id}/validate?step=1` — validate step
-4. `POST /api/intake/uploads` — upload photo/ID images (multipart)
-5. `POST /api/intake/ai/duplicates` — check duplicates before save
-6. `POST /api/intake/drafts/{id}/finalize` — create user + client profile
-
-## OCR flow
-
-1. `POST /api/intake/uploads` — upload scanned form (JPG/PNG/PDF)
-2. `POST /api/intake/ocr/process` — `{ "upload_id": 1, "draft_id": 1 }`
-3. `GET /api/intake/ocr/results/{extraction_id}` — review confidence scores
-4. `POST /api/intake/ocr/apply` — `{ "extraction_id": 1, "draft_id": 1, "overwrite": false }`
-5. Admin edits draft via `PATCH /api/intake/drafts/{id}`
-6. `POST /api/intake/drafts/{id}/finalize` — **human must confirm**
-
-Alternative: `POST /api/intake/ocr/map-from-text` with `{ "raw_text": "..." }` if using browser OCR.
-
-## AI helpers
-
-- `POST /api/intake/ai/duplicates`
-- `POST /api/intake/ai/classify-case`
-- `POST /api/intake/ai/suggestions`
-
-## draft_data JSON shape
+`PATCH /api/intake/drafts/{id}`
 
 ```json
 {
-  "personal": {
-    "first_name": "Juan",
-    "last_name": "Dela Cruz",
-    "birth_date": "1985-03-21",
-    "nationality": "Filipino"
-  },
-  "contact": {
-    "email": "juan@example.com",
-    "phone_number": "09171234567",
-    "address": "123 Main St, Legazpi City"
-  },
-  "valid_ids": {
-    "primary_id_type": "PhilSys ID",
-    "primary_id_number": "1234-5678-9012",
-    "profile_photo_url": "https://..."
-  },
-  "case_info": {
-    "case_type": "Family Law",
-    "notes": "Annulment consultation"
+  "current_step": 2,
+  "draft_data": {
+    "personal": { "first_name": "Juan", "last_name": "Dela Cruz", "birth_date": "1985-03-21", "nationality": "Filipino" }
   }
 }
 ```
 
+- Server **merges** partial `draft_data` into existing JSON (does not replace whole draft).
+- Validates **only sections sent** in `draft_data` (e.g. only `personal` → no `contact.email` errors).
+- Validation failure: **422** with FastAPI-style `detail` array:
+  ```json
+  { "detail": [{ "loc": ["body","draft_data","personal","first_name"], "msg": "First name is required", "type": "value_error" }] }
+  ```
+
+## Validate step
+
+`POST /api/intake/drafts/{id}/validate?step=1|2|3|4`
+
+- Validates **that step only**.
+- Response: `{ "step": 1, "valid": true, "errors": [] }` or `errors: [{ "field": "personal.first_name", "message": "..." }]`
+
+## Upload
+
+`POST /api/intake/uploads` (multipart)
+
+| Field | Description |
+|-------|-------------|
+| `file` | JPG, PNG, WEBP, PDF |
+| `draft_id` | Required for OCR flow |
+| `category` | `profile_photo`, `valid_id_primary`, `valid_id_secondary`, `ocr_document`, `intake_form`, `other` |
+
+Success **200/201**:
+
+```json
+{ "id": 1, "upload_id": 1, "url": "https://...", "storage_path": "...", "upload_category": "ocr_document" }
+```
+
+## valid_ids (step 3)
+
+Accepts upload IDs (resolved to URLs on finalize):
+
+- `profile_photo_upload_id`
+- `primary_id_image_upload_id`
+- `secondary_id_image_upload_id`
+
+Or direct URLs: `profile_photo_url`, `primary_id_image_url`, etc.
+
+## AI suggestions
+
+`POST /api/intake/ai/suggestions`
+
+```json
+{ "draft_data": { "personal": { ... } }, "current_step": 1 }
+```
+
+- Hints for **current step only** (no errors for empty future steps).
+- Response: `{ "suggestions": [{ "field": "personal.first_name", "message": "...", "severity": "info|warning|error" }], "is_ready_to_finalize": false }`
+
+## OCR
+
+1. `POST /api/intake/ocr/process` — `{ "upload_id": 1, "draft_id": 1 }`  
+   → `{ "id": 1, "extraction_id": 1, "status": "processing|completed|failed" }`
+
+2. `GET /api/intake/ocr/results/{id}`  
+   → `{ "status": "...", "fields": [{ "field", "label", "value", "confidence": 0-100 }], "openai_available": true }`
+
+3. `POST /api/intake/ocr/apply` — `{ "extraction_id", "draft_id", "overwrite": false }` — merges into draft, does not finalize.
+
+## Finalize
+
+`POST /api/intake/drafts/{id}/finalize`
+
+- Validates **all 4 steps**.
+- Creates `users` row with role **client** only.
+
+```json
+{ "client_id": 1, "user_id": 1, "email": "...", "temporary_password": "...", "full_name": "..." }
+```
+
+## draft_data sections (snake_case)
+
+- `personal`, `contact`, `valid_ids`, `case_info`
+
 ## Environment
 
-| Variable | Description |
-|----------|-------------|
-| `OPENAI_API_KEY` | Optional — enables vision OCR on images |
-| `OPENAI_OCR_MODEL` | Default `gpt-4o-mini` |
-| `INTAKE_STORAGE_BUCKET` | Default `intake-uploads` |
-| `INTAKE_MAX_FILE_MB` | Default `10` |
+| Variable | Required |
+|----------|----------|
+| `SUPABASE_URL` | Yes |
+| `SUPABASE_SERVICE_KEY` | Yes |
+| `SECRET_KEY` | Yes |
+| `INTAKE_STORAGE_BUCKET` | `intake-uploads` |
+| `INTAKE_MAX_FILE_MB` | `4` on Vercel |
+| `OPENAI_API_KEY` | Optional (OCR) |
+
+## Smoke test
+
+1. `POST /api/intake/drafts` `{ "source": "manual", "current_step": 1 }`
+2. `PATCH` with only `personal` → **422 must NOT** mention `contact.email`
+3. `POST /api/intake/uploads` `category=ocr_document`
+4. `POST /api/intake/ai/suggestions` `current_step=1` → step-1 hints only
+5. `POST /finalize` after all steps complete

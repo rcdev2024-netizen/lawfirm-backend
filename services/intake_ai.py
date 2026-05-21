@@ -1,15 +1,14 @@
 """AI-assisted duplicate detection, case classification, and form suggestions."""
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 from database import get_supabase
 from services.intake_helpers import (
     CASE_CATEGORIES,
     build_full_name,
     normalize_phone,
-    parse_draft_data,
-    validate_step,
 )
+from services.intake_validation import validate_step_only
 
 
 def _name_similarity(a: str, b: str) -> float:
@@ -121,44 +120,88 @@ def classify_case(notes: str | None, case_type: str | None) -> dict:
     }
 
 
-def build_suggestions(draft_data: Dict[str, Any]) -> tuple[List[dict], bool]:
+def _dedupe_suggestions(items: List[dict]) -> List[dict]:
+    seen: Set[str] = set()
+    out: List[dict] = []
+    for s in items:
+        key = f"{s.get('field')}:{s.get('message')}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
+def build_suggestions(
+    draft_data: Dict[str, Any],
+    current_step: int = 1,
+) -> tuple[List[dict], bool]:
+    """Hints for the active step only — no errors for empty future steps."""
     suggestions: List[dict] = []
-    data = parse_draft_data(draft_data)
+    step = max(1, min(4, current_step))
 
-    for step in range(1, 5):
-        for err in validate_step(step, draft_data):
-            suggestions.append({"field": f"step{step}", "severity": "error", "message": err})
+    for e in validate_step_only(step, draft_data):
+        suggestions.append({
+            "field": e["field"],
+            "severity": "error",
+            "message": e["message"],
+        })
 
-    if data.contact:
-        c = data.contact
-        if c.phone_number and not re.match(r"^(\+63|0)?9\d{9}$", normalize_phone(c.phone_number).replace(" ", "")):
+    if step == 1:
+        p = draft_data.get("personal") or {}
+        if p and not p.get("middle_name"):
             suggestions.append({
-                "field": "phoneNumber",
-                "severity": "warning",
-                "message": "Phone number may be invalid for Philippines (expected 09XXXXXXXXX).",
-            })
-        if c.address and len(c.address) < 10:
-            suggestions.append({
-                "field": "address",
-                "severity": "warning",
-                "message": "Address looks incomplete.",
-            })
-        if not c.city and not c.province:
-            suggestions.append({
-                "field": "city",
+                "field": "personal.middle_name",
                 "severity": "info",
-                "message": "Consider adding city and province for complete address.",
+                "message": "Middle name is optional but helps match records.",
             })
 
-    if data.case_info and data.case_info.notes:
-        pred = classify_case(data.case_info.notes, data.case_info.case_type)
-        if not data.case_info.case_category:
+    if step == 2:
+        c = draft_data.get("contact") or {}
+        if c:
+            phone = c.get("phone_number")
+            if phone and not re.match(
+                r"^(\+63|0)?9\d{9}$", normalize_phone(str(phone)).replace(" ", "")
+            ):
+                suggestions.append({
+                    "field": "contact.phone_number",
+                    "severity": "warning",
+                    "message": "Phone number may be invalid for Philippines (expected 09XXXXXXXXX).",
+                })
+            if c.get("address") and len(str(c["address"])) < 10:
+                suggestions.append({
+                    "field": "contact.address",
+                    "severity": "warning",
+                    "message": "Address looks incomplete.",
+                })
+            if not c.get("city") and not c.get("province"):
+                suggestions.append({
+                    "field": "contact.city",
+                    "severity": "info",
+                    "message": "Consider adding city and province for a complete address.",
+                })
+
+    if step == 3:
+        v = draft_data.get("valid_ids") or {}
+        if not v.get("profile_photo_upload_id") and not v.get("profile_photo_url"):
             suggestions.append({
-                "field": "caseCategory",
+                "field": "valid_ids.profile_photo_upload_id",
+                "severity": "info",
+                "message": "A profile photo helps staff identify the client.",
+            })
+
+    if step == 4:
+        ci = draft_data.get("case_info") or {}
+        if ci.get("notes") and not ci.get("case_category"):
+            pred = classify_case(ci.get("notes"), ci.get("case_type"))
+            suggestions.append({
+                "field": "case_info.case_category",
                 "severity": "info",
                 "message": f"Suggested category: {pred['predicted_category']}",
             })
 
-    errors = [s for s in suggestions if s["severity"] == "error"]
-    ready = len(errors) == 0 and validate_step(4, draft_data) == []
+    suggestions = _dedupe_suggestions(suggestions)
+    from services.intake_validation import validate_all_steps
+
+    ready = len(validate_all_steps(draft_data)) == 0
     return suggestions, ready
