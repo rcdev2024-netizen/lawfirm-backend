@@ -116,14 +116,8 @@ def create_draft(
     user: dict = Depends(require_admin_or_attorney),
 ):
     draft_data = body.draft_data or {}
-    if draft_data:
-        sections = _sections_in_payload(draft_data)
-        if sections:
-            errors = validate_sections(draft_data, sections)
-        else:
-            errors = validate_step_only(body.current_step, draft_data)
-        if errors:
-            raise_validation_422(errors)
+    # Skip validation for draft status - only validate when finalizing
+    # This allows imperfect OCR-extracted data to be saved as drafts
 
     row = supabase.table("client_intake_drafts").insert({
         "created_by": user["id"],
@@ -203,7 +197,11 @@ def update_draft(
     if body.draft_data is not None:
         incoming = body.draft_data or {}
         merged = merge_raw_draft_payload(d.get("draft_data") or {}, incoming)
-        _validate_patch_payload(incoming, merged, body.current_step or d.get("current_step"))
+        # Skip validation for draft status - only validate when finalizing
+        # This allows imperfect OCR-extracted data to be saved as drafts
+        current_status = body.status or d.get("status")
+        if current_status != "draft":
+            _validate_patch_payload(incoming, merged, body.current_step or d.get("current_step"))
         update_payload["draft_data"] = merged
 
     if not update_payload:
