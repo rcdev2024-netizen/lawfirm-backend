@@ -108,6 +108,7 @@ class PaginatedIntakeDraftsOut(BaseModel):
 
 class IntakeUploadOut(BaseModel):
     id: int
+    upload_id: int
     file_name: str
     file_type: Optional[str] = None
     file_size: Optional[int] = None
@@ -116,6 +117,11 @@ class IntakeUploadOut(BaseModel):
     upload_category: str
     draft_id: Optional[int] = None
     created_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, row: dict) -> "IntakeUploadOut":
+        uid = row["id"]
+        return cls(upload_id=uid, id=uid, **{k: v for k, v in row.items() if k != "id"})
 
 
 class OcrProcessRequest(BaseModel):

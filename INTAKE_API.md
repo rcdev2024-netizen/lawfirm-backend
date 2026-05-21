@@ -6,6 +6,14 @@ Run `migration_client_intake.sql` in Supabase, then create a **private** Storage
 
 All endpoints require `Authorization: Bearer <JWT>` and role `admin` or `attorney`.
 
+### Upload endpoint
+
+- **URL:** `POST /api/intake/uploads`
+- **Multipart:** `file` (required), `draft_id` (optional), `category` (default `intake_form`)
+- **OCR flow:** use `category=ocr_document`
+- **Success:** JSON includes `id` and `upload_id` (same integer)
+- **DB fix:** if `ocr_document` caused 500 before, run `migration_client_intake_upload_fix.sql` in Supabase
+
 ## Manual wizard flow
 
 1. `POST /api/intake/drafts` — start draft (`source: "manual"`)

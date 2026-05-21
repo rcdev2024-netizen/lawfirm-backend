@@ -6,11 +6,14 @@ Business rules:
 - Drafts support partial completion.
 - Finalize creates users + client profile tables.
 """
+import logging
 import math
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+
+logger = logging.getLogger(__name__)
 
 from database import supabase
 import auth as auth_utils
@@ -203,7 +206,7 @@ def validate_draft_step(
 
 # ── FILE UPLOADS ──────────────────────────────────────────────
 
-@router.post("/uploads", response_model=IntakeUploadOut)
+@router.post("/uploads", response_model=IntakeUploadOut, summary="Upload intake file (multipart)")
 @limiter.limit("30/minute")
 async def upload_file(
     request: Request,
@@ -212,18 +215,47 @@ async def upload_file(
     category: str = Form("intake_form"),
     user: dict = Depends(require_admin_or_attorney),
 ):
-    content = await file.read()
-    content_type = file.content_type or "application/octet-stream"
-    _, public_url, upload_id = upload_intake_file(
-        content,
-        file.filename or "upload",
-        content_type,
-        user["id"],
-        draft_id=draft_id,
-        category=category,
-    )
-    row = supabase.table("intake_uploads").select("*").eq("id", upload_id).execute()
-    return row.data[0]
+    """
+    Mounted at POST /api/intake/uploads (router prefix /api/intake).
+
+    Multipart: file (required), draft_id (optional), category (default intake_form).
+    Frontend OCR flow uses category=ocr_document.
+    """
+    if draft_id is not None and draft_id < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "Invalid draft_id", "errors": ["draft_id must be a positive integer"]},
+        )
+
+    try:
+        content = await file.read()
+        content_type = file.content_type or "application/octet-stream"
+        _, _, upload_id = upload_intake_file(
+            content,
+            file.filename or "upload",
+            content_type,
+            user["id"],
+            draft_id=draft_id,
+            category=category,
+            user_role=user.get("role", "attorney"),
+        )
+        row = supabase.table("intake_uploads").select("*").eq("id", upload_id).execute()
+        if not row.data:
+            raise HTTPException(status_code=500, detail="Upload saved but metadata could not be loaded")
+        return IntakeUploadOut.from_row(row.data[0])
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "intake upload unexpected error user_id=%s draft_id=%s category=%s",
+            user.get("id"),
+            draft_id,
+            category,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Upload failed due to an unexpected server error",
+        ) from e
 
 
 # ── OCR WORKFLOW ──────────────────────────────────────────────

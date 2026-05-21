@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS intake_uploads (
     CONSTRAINT chk_upload_category CHECK (
         upload_category IN (
             'intake_form', 'valid_id_primary', 'valid_id_secondary',
-            'profile_photo', 'other'
+            'profile_photo', 'other', 'ocr_document'
         )
     )
 );
