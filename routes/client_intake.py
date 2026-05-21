@@ -11,7 +11,7 @@ import math
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +294,39 @@ async def upload_file(
         ) from e
 
 
+# ── OCR BACKGROUND WORKER ─────────────────────────────────────
+
+def _run_ocr_background(extraction_id: int, upload_id: int, draft_id: int | None, performed_by: int):
+    """
+    Runs after the HTTP response is sent.
+    Updates the extraction row to completed or failed when done.
+    """
+    sb = supabase
+    try:
+        ext = process_upload_ocr(upload_id, draft_id, performed_by)
+        # process_upload_ocr creates its own row — copy results into our placeholder
+        sb.table("intake_extraction_results").update({
+            "status": ext.get("status", "completed"),
+            "raw_text": ext.get("raw_text"),
+            "extracted_fields": ext.get("extracted_fields", {}),
+            "field_confidence": ext.get("field_confidence", {}),
+            "mapped_fields": ext.get("mapped_fields", {}),
+            "provider": ext.get("provider", "unknown"),
+            "error_message": ext.get("error_message"),
+        }).eq("id", extraction_id).execute()
+
+        # Delete the duplicate row created by process_upload_ocr
+        if ext.get("id") and ext["id"] != extraction_id:
+            sb.table("intake_extraction_results").delete().eq("id", ext["id"]).execute()
+
+    except Exception as e:
+        logger.exception("OCR background task failed extraction_id=%s", extraction_id)
+        sb.table("intake_extraction_results").update({
+            "status": "failed",
+            "error_message": str(e)[:500],
+        }).eq("id", extraction_id).execute()
+
+
 # ── OCR WORKFLOW ──────────────────────────────────────────────
 
 @router.post("/ocr/process", response_model=OcrProcessOut)
@@ -301,33 +334,59 @@ async def upload_file(
 def run_ocr_process(
     request: Request,
     body: OcrProcessRequest,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(require_admin_or_attorney),
 ):
+    """
+    Returns immediately with status=processing.
+    Actual OCR runs in a background task.
+    Poll GET /ocr/results/{id} until status is completed or failed.
+    """
+    from fastapi import BackgroundTasks as BT
+
     if not body.draft_id:
         raise HTTPException(status_code=400, detail="draft_id is required for OCR processing")
-    try:
-        ext = process_upload_ocr(body.upload_id, body.draft_id, user["id"])
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except RuntimeError as e:
-        logger.exception("ocr process failed")
-        raise HTTPException(status_code=500, detail=str(e)) from e
 
+    # Verify upload exists before queuing
+    upload_check = supabase.table("intake_uploads").select("id").eq("id", body.upload_id).execute()
+    if not upload_check.data:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    # Create a placeholder extraction row immediately so we have an ID to return
+    placeholder = supabase.table("intake_extraction_results").insert({
+        "upload_id": body.upload_id,
+        "draft_id": body.draft_id,
+        "status": "processing",
+        "raw_text": None,
+        "extracted_fields": {},
+        "field_confidence": {},
+        "mapped_fields": {},
+        "provider": "pending",
+        "error_message": None,
+    }).execute()
+
+    if not placeholder.data:
+        raise HTTPException(status_code=500, detail="Failed to initialize OCR job")
+
+    extraction_id = placeholder.data[0]["id"]
+
+    # Link draft to this extraction immediately
     supabase.table("client_intake_drafts").update({
-        "extraction_id": ext["id"],
+        "extraction_id": extraction_id,
         "intake_upload_id": body.upload_id,
         "source": "ocr",
     }).eq("id", body.draft_id).execute()
 
-    eid = ext["id"]
-    st = ext.get("status") or "processing"
-    if st == "completed":
-        st = "completed"
-    elif st == "failed":
-        st = "failed"
-    else:
-        st = "processing"
-    return OcrProcessOut(id=eid, extraction_id=eid, status=st)
+    # Queue the actual OCR work — runs after response is sent
+    background_tasks.add_task(
+        _run_ocr_background,
+        extraction_id=extraction_id,
+        upload_id=body.upload_id,
+        draft_id=body.draft_id,
+        performed_by=user["id"],
+    )
+
+    return OcrProcessOut(id=extraction_id, extraction_id=extraction_id, status="processing")
 
 
 @router.post("/ocr/map-from-text", response_model=IntakeExtractionOut)

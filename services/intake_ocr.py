@@ -205,7 +205,8 @@ def process_upload_ocr(upload_id: int, draft_id: int | None, performed_by: int) 
 
     mapped = extraction_to_draft_fields(extracted)
 
-    row = sb.table("intake_extraction_results").insert({
+    # Return result dict without inserting — caller manages the DB row
+    result = {
         "upload_id": upload_id,
         "draft_id": draft_id,
         "status": status,
@@ -215,21 +216,17 @@ def process_upload_ocr(upload_id: int, draft_id: int | None, performed_by: int) 
         "mapped_fields": mapped,
         "provider": provider,
         "error_message": error_message,
-    }).execute()
+    }
 
-    if not row.data:
-        raise RuntimeError("Failed to save extraction result")
-
-    ext = row.data[0]
     sb.table("intake_ai_logs").insert({
         "draft_id": draft_id,
         "action": "ocr_extract",
         "input_summary": f"upload_id={upload_id}",
-        "output_summary": {"extraction_id": ext["id"], "status": status, "field_count": len(extracted)},
+        "output_summary": {"status": status, "field_count": len(extracted)},
         "performed_by": performed_by,
     }).execute()
 
-    return ext
+    return result
 
 
 def process_text_ocr(raw_text: str, draft_id: int | None, performed_by: int) -> dict:
@@ -294,27 +291,33 @@ def format_extraction_response(ext: dict) -> dict:
             "confidence": score_pct,
             "level": _confidence_level(score_raw if score_raw <= 1 else score_raw / 100),
         })
+
+    raw_status = ext.get("status") or "processing"
+
+    # Normalize status to one of: processing | completed | failed | requires_review
+    if raw_status in ("completed", "failed", "processing", "requires_review"):
+        status = raw_status
+    elif field_list:
+        status = "completed"
+    else:
+        status = "processing"
+
     msg = ext.get("error_message")
-    if not msg and ext.get("status") == "requires_review":
+    if not msg and status == "requires_review":
         msg = "Review all fields before saving. AI assists extraction only."
+    if not msg and status == "processing":
+        msg = "OCR is still processing. Please wait and refresh."
 
     ext_id = ext.get("id")
-    status = ext.get("status") or "pending"
-    if status == "completed":
-        status = "completed"
-    elif status in ("pending", "processing"):
-        status = status
-    elif status == "failed":
-        status = "failed"
-    else:
-        status = "processing" if not field_list else "completed"
-
     return {
         **ext,
         "id": ext_id,
         "extraction_id": ext_id,
         "status": status,
         "fields": field_list,
+        "extracted_fields": fields,
+        "field_confidence": conf,
+        "mapped_fields": ext.get("mapped_fields") or {},
         "openai_available": bool(OPENAI_API_KEY),
         "message": msg,
     }
