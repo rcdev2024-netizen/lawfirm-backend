@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends, 
 from database import supabase
 import schemas
 import auth as auth_utils
-from main import limiter
+from limiter import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 

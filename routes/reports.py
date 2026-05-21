@@ -6,7 +6,7 @@ import auth as auth_utils
 from datetime import date, timedelta
 import re
 import calendar as cal_module
-from main import limiter
+from limiter import limiter
 from fastapi import Request
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
