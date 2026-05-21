@@ -98,6 +98,23 @@ Or direct URLs: `profile_photo_url`, `primary_id_image_url`, etc.
 
 - `personal`, `contact`, `valid_ids`, `case_info`
 
+## Valid ID types (Philippines)
+
+Run `migration_valid_id_types.sql` in Supabase to create catalog table `valid_id_types`.
+
+`GET /api/intake/id-types` returns:
+
+```json
+{
+  "primary": ["Philippine Passport", "PhilSys National ID", "..."],
+  "secondary": ["TIN ID", "Barangay ID", "..."],
+  "id_types": ["...all..."],
+  "items": [{ "id": 1, "name": "...", "category": "primary", "display_order": 1 }]
+}
+```
+
+`client_valid_ids` stores each **client’s** chosen ID (links via `id_type` name).
+
 ## Environment
 
 | Variable | Required |

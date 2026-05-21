@@ -590,10 +590,10 @@ def get_client_profile(user_id: int, user: dict = Depends(require_admin_or_attor
     }
 
 
-@router.get("/id-types")
+@router.get("/id-types", summary="Philippine valid ID catalog (primary + secondary)")
 def list_id_types():
-    from services.intake_helpers import ID_TYPES
-    return {"id_types": ID_TYPES}
+    from services.valid_id_types import fetch_valid_id_types
+    return fetch_valid_id_types()
 
 
 @router.get("/case-categories")

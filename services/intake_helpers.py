@@ -18,9 +18,29 @@ from schemas_intake import (
 PH_PHONE_RE = re.compile(r"^(\+63|0)?9\d{9}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# Legacy flat list — prefer GET /api/intake/id-types (valid_id_types table)
 ID_TYPES = [
-    "Passport", "Driver's License", "PhilSys ID", "UMID", "PRC ID",
-    "Postal ID", "Voter's ID", "Senior Citizen ID", "Company ID",
+    "Philippine Passport",
+    "PhilSys National ID",
+    "Driver's License",
+    "UMID (Unified Multi-Purpose ID)",
+    "PRC ID",
+    "Postal ID",
+    "Voter's ID",
+    "SSS ID",
+    "GSIS eCard",
+    "Senior Citizen ID",
+    "PWD ID",
+    "OWWA ID",
+    "OFW ID",
+    "TIN ID",
+    "Barangay ID",
+    "Company ID",
+    "School ID",
+    "Police Clearance",
+    "NBI Clearance",
+    "Birth Certificate",
+    "Marriage Certificate",
 ]
 
 CASE_CATEGORIES = [
