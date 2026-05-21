@@ -248,6 +248,14 @@ class PaginatedCasesOut(BaseModel):
     pages: int
 
 
+class PaginatedClientsOut(BaseModel):
+    items: List[ClientOut]
+    total: int
+    page: int
+    limit: int
+    pages: int
+
+
 # â”€â”€ DOCUMENT SCHEMAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class DocumentCreate(BaseModel):

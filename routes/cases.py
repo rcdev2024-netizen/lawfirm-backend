@@ -35,26 +35,46 @@ def create_case(
     return result.data[0]
 
 
-@router.get("", response_model=List[schemas.CaseOut], summary="Get all cases (admin) or my cases (client/attorney)")
+@router.get("", response_model=schemas.PaginatedCasesOut, summary="Get all cases (admin) or my cases (client/attorney)")
 def get_cases(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     case_status: Optional[str] = Query(None, alias="status"),
     current_user: dict = Depends(auth_utils.get_current_user)
 ):
+    import math
     role = current_user.get("role", "client")
-    query = supabase.table("cases").select("*").order("created_at", desc=True).range(skip, skip + limit - 1)
+    cols = "id,case_number,case_name,case_type,status,client_id,attorney_id,next_hearing_date,next_hearing_time,court,judge,filed_date,closed_date,created_at"
 
+    # Count query
+    count_q = supabase.table("cases").select("id", count="exact")
+    if role == "client":
+        count_q = count_q.eq("client_id", current_user["id"])
+    elif role == "attorney":
+        count_q = count_q.eq("attorney_id", current_user["id"])
+    if case_status:
+        count_q = count_q.eq("status", case_status)
+    total = count_q.execute().count or 0
+
+    # Data query
+    query = supabase.table("cases").select(cols).order("created_at", desc=True).range(skip, skip + limit - 1)
     if role == "client":
         query = query.eq("client_id", current_user["id"])
     elif role == "attorney":
         query = query.eq("attorney_id", current_user["id"])
-
     if case_status:
         query = query.eq("status", case_status)
 
-    result = query.execute()
-    return result.data or []
+    items = query.execute().data or []
+    page = (skip // limit) + 1
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": math.ceil(total / limit) if total > 0 else 1,
+    }
 
 
 @router.get("/my", response_model=List[schemas.CaseOut], summary="Get my cases")

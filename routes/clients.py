@@ -26,7 +26,7 @@ def _get_client_role_id() -> int:
     return result.data[0]["id"]
 
 
-@router.get("", response_model=List[schemas.ClientOut], summary="List all clients (admin/attorney)")
+@router.get("", response_model=schemas.PaginatedClientsOut, summary="List all clients (admin/attorney)")
 def list_clients(
     approval_status: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
@@ -34,7 +34,18 @@ def list_clients(
     limit: int = Query(50, ge=1, le=200),
     _user: dict = Depends(require_admin_or_attorney)
 ):
+    import math
     client_role_id = _get_client_role_id()
+
+    # Count query
+    count_q = supabase.table("users").select("id", count="exact").eq("role_id", client_role_id)
+    if approval_status:
+        count_q = count_q.eq("approval_status", approval_status)
+    if q:
+        count_q = count_q.ilike("full_name", f"%{q}%")
+    total = count_q.execute().count or 0
+
+    # Data query
     query = (
         supabase.table("users")
         .select("id, full_name, email, phone, is_active, approval_status, created_at")
@@ -45,8 +56,16 @@ def list_clients(
         query = query.eq("approval_status", approval_status)
     if q:
         query = query.ilike("full_name", f"%{q}%")
-    result = query.range(skip, skip + limit - 1).execute()
-    return result.data or []
+    items = query.range(skip, skip + limit - 1).execute().data or []
+    page = (skip // limit) + 1
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": math.ceil(total / limit) if total > 0 else 1,
+    }
 
 
 @router.get("/search", response_model=List[schemas.UserSearchResult], summary="Search clients by name/email")
