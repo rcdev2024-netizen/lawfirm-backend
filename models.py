@@ -47,12 +47,26 @@ class Case(Base):
     status = Column(String(50), default="open")
     client_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
     attorney_id = Column(BigInteger, ForeignKey("users.id"), nullable=True)
-    next_hearing_date = Column(Date, nullable=True)
-    next_hearing_time = Column(String(50))
     court = Column(String(255))
     judge = Column(String(255))
     filed_date = Column(Date, nullable=True)
     closed_date = Column(Date, nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+
+
+class CaseHearing(Base):
+    __tablename__ = "case_hearings"
+
+    id = Column(BigInteger, primary_key=True, index=True)
+    case_id = Column(BigInteger, ForeignKey("cases.id", ondelete="CASCADE"), nullable=False)
+    hearing_date = Column(Date, nullable=False)
+    hearing_time = Column(String(50))
+    court = Column(String(255))
+    judge = Column(String(255))
+    status = Column(String(50), default="scheduled")
+    notes = Column(Text)
+    rescheduled_from_id = Column(BigInteger, ForeignKey("case_hearings.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
