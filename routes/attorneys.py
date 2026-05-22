@@ -37,14 +37,29 @@ def list_attorneys(
     attorney_role_id = _get_attorney_role_id()
     query = (
         supabase.table("users")
-        .select("id, full_name, email, phone, specialization, is_active, avatar_url, created_at")
+        .select("id, full_name, email, phone, specialization, is_active, created_at")
         .eq("role_id", attorney_role_id)
         .order("full_name")
     )
     if q:
         query = query.ilike("full_name", f"%{q}%")
     result = query.range(skip, skip + limit - 1).execute()
-    return result.data or []
+    attorneys = result.data or []
+    
+    # Fetch avatar_url from intake_uploads for each attorney
+    for attorney in attorneys:
+        upload = (
+            supabase.table("intake_uploads")
+            .select("public_url")
+            .eq("uploaded_by", attorney["id"])
+            .eq("upload_category", "profile_photo")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        attorney["avatar_url"] = upload.data[0]["public_url"] if upload.data else None
+    
+    return attorneys
 
 
 @router.get("/search", response_model=List[schemas.UserSearchResult], summary="Search attorneys by name")
@@ -94,15 +109,11 @@ def create_attorney(payload: schemas.AttorneyCreate, admin: dict = Depends(requi
 def update_attorney(user_id: int, payload: schemas.AttorneyUpdate, admin: dict = Depends(require_admin)):
     update_data = {k: v for k, v in payload.model_dump().items() if v is not None}
     
-    # Handle profile_photo_upload_id - convert to avatar_url
-    if "profile_photo_upload_id" in update_data:
-        upload_id = update_data.pop("profile_photo_upload_id")
-        upload_record = supabase.table("intake_uploads").select("public_url").eq("id", upload_id).execute()
-        if upload_record.data and upload_record.data[0].get("public_url"):
-            update_data["avatar_url"] = upload_record.data[0]["public_url"]
+    # Note: avatar_url is now fetched from intake_uploads.public_url in the list endpoint
+    # Direct avatar_url updates to users table are deprecated
     
     if not update_data:
-        result = supabase.table("users").select("id,full_name,email,phone,specialization,is_active,avatar_url,created_at").eq("id", user_id).execute()
+        result = supabase.table("users").select("id,full_name,email,phone,specialization,is_active,created_at").eq("id", user_id).execute()
         if not result.data:
             raise HTTPException(status_code=404, detail="Attorney not found")
         return result.data[0]
@@ -155,7 +166,7 @@ async def upload_attorney_file(
             category=normalized_category,
             user_role=admin.get("role", "admin"),
         )
-        return {"upload_id": upload_id, "url": public_url}
+        return {"upload_id": upload_id, "public_url": public_url}
     except HTTPException:
         raise
     except Exception as e:
