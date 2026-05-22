@@ -37,29 +37,14 @@ def list_attorneys(
     attorney_role_id = _get_attorney_role_id()
     query = (
         supabase.table("users")
-        .select("id, full_name, email, phone, specialization, is_active, created_at")
+        .select("id, full_name, email, phone, specialization, is_active, avatar_url, created_at")
         .eq("role_id", attorney_role_id)
         .order("full_name")
     )
     if q:
         query = query.ilike("full_name", f"%{q}%")
     result = query.range(skip, skip + limit - 1).execute()
-    attorneys = result.data or []
-    
-    # Fetch avatar_url from intake_uploads for each attorney
-    for attorney in attorneys:
-        upload = (
-            supabase.table("intake_uploads")
-            .select("public_url")
-            .eq("uploaded_by", attorney["id"])
-            .eq("upload_category", "profile_photo")
-            .order("created_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-        attorney["avatar_url"] = upload.data[0]["public_url"] if upload.data else None
-    
-    return attorneys
+    return result.data or []
 
 
 @router.get("/search", response_model=List[schemas.UserSearchResult], summary="Search attorneys by name")
@@ -166,6 +151,10 @@ async def upload_attorney_file(
             category=normalized_category,
             user_role=admin.get("role", "admin"),
         )
+        
+        # Update avatar_url in users table
+        supabase.table("users").update({"avatar_url": public_url}).eq("id", attorney_id).execute()
+        
         return {"upload_id": upload_id, "public_url": public_url}
     except HTTPException:
         raise
