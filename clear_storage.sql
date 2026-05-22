@@ -1,0 +1,12 @@
+-- ============================================================
+-- SUPABASE STORAGE CLEANUP
+-- WARNING: Direct SQL deletion from storage tables is NOT ALLOWED by Supabase
+-- 
+-- ERROR: Direct deletion from storage tables is not allowed. Use the Storage API instead.
+-- 
+-- SOLUTION: Use the Python script instead: clear_storage.py
+-- 
+-- Run: python clear_storage.py
+-- 
+-- This script uses the Supabase Storage API to properly delete files
+-- ============================================================

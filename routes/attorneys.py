@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi import APIRouter, HTTPException, Depends, status, Query, UploadFile, File, Form
 from typing import List, Optional
 from database import supabase
 import schemas
 import auth as auth_utils
+from services.intake_storage import upload_intake_file, normalize_upload_category
 
 router = APIRouter(prefix="/api/attorneys", tags=["Attorneys"])
 
@@ -36,7 +37,7 @@ def list_attorneys(
     attorney_role_id = _get_attorney_role_id()
     query = (
         supabase.table("users")
-        .select("id, full_name, email, phone, specialization, is_active, created_at")
+        .select("id, full_name, email, phone, specialization, is_active, avatar_url, created_at")
         .eq("role_id", attorney_role_id)
         .order("full_name")
     )
@@ -92,8 +93,16 @@ def create_attorney(payload: schemas.AttorneyCreate, admin: dict = Depends(requi
 @router.patch("/{user_id}", response_model=schemas.AttorneyOut, summary="Update attorney (admin)")
 def update_attorney(user_id: int, payload: schemas.AttorneyUpdate, admin: dict = Depends(require_admin)):
     update_data = {k: v for k, v in payload.model_dump().items() if v is not None}
+    
+    # Handle profile_photo_upload_id - convert to avatar_url
+    if "profile_photo_upload_id" in update_data:
+        upload_id = update_data.pop("profile_photo_upload_id")
+        upload_record = supabase.table("intake_uploads").select("public_url").eq("id", upload_id).execute()
+        if upload_record.data and upload_record.data[0].get("public_url"):
+            update_data["avatar_url"] = upload_record.data[0]["public_url"]
+    
     if not update_data:
-        result = supabase.table("users").select("id,full_name,email,phone,specialization,is_active,created_at").eq("id", user_id).execute()
+        result = supabase.table("users").select("id,full_name,email,phone,specialization,is_active,avatar_url,created_at").eq("id", user_id).execute()
         if not result.data:
             raise HTTPException(status_code=404, detail="Attorney not found")
         return result.data[0]
@@ -110,3 +119,44 @@ def delete_attorney(user_id: int, admin: dict = Depends(require_admin)):
     if not result.data:
         raise HTTPException(status_code=404, detail="Attorney not found")
     return {"message": f"Attorney {user_id} deleted successfully"}
+
+
+@router.post("/{attorney_id}/uploads", response_model=schemas.AttorneyUploadOut, status_code=status.HTTP_201_CREATED, summary="Upload attorney file (admin)")
+async def upload_attorney_file(
+    attorney_id: int,
+    file: UploadFile = File(...),
+    category: str = Form("profile_photo"),
+    admin: dict = Depends(require_admin)
+):
+    """Upload a file for an attorney (e.g., profile photo)."""
+    # Verify attorney exists
+    attorney_role_id = _get_attorney_role_id()
+    attorney_check = supabase.table("users").select("id").eq("id", attorney_id).eq("role_id", attorney_role_id).execute()
+    if not attorney_check.data:
+        raise HTTPException(status_code=404, detail="Attorney not found")
+
+    # Validate category
+    normalized_category = normalize_upload_category(category)
+    if normalized_category != "profile_photo":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only profile_photo category is supported for attorney uploads"
+        )
+
+    try:
+        content = await file.read()
+        content_type = file.content_type or "application/octet-stream"
+        storage_path, public_url, upload_id = upload_intake_file(
+            content,
+            file.filename or "upload",
+            content_type,
+            admin["id"],
+            draft_id=None,
+            category=normalized_category,
+            user_role=admin.get("role", "admin"),
+        )
+        return {"upload_id": upload_id, "url": public_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}") from e

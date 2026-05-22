@@ -224,6 +224,7 @@ class AttorneyUpdate(BaseModel):
     phone: Optional[str] = None
     is_active: Optional[bool] = None
     specialization: Optional[str] = None
+    profile_photo_upload_id: Optional[int] = None
 
 
 class AttorneyOut(BaseModel):
@@ -233,9 +234,15 @@ class AttorneyOut(BaseModel):
     phone: Optional[str] = None
     specialization: Optional[str] = None
     is_active: bool
+    avatar_url: Optional[str] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class AttorneyUploadOut(BaseModel):
+    upload_id: int
+    url: Optional[str] = None
 
 
 # â”€â”€ USER SEARCH SCHEMA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
