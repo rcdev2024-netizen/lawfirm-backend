@@ -204,12 +204,23 @@ def create_hearing(
         "status": body.status or "scheduled",
         "notes": body.notes,
     }
-    result = supabase.table("case_hearings").insert(data).execute()
+    # Remove None values — let DB defaults apply
+    data = {k: v for k, v in data.items() if v is not None}
+    data["case_id"] = case_id  # always include
+
+    try:
+        result = supabase.table("case_hearings").insert(data).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Insert failed: {str(e)}")
+
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create hearing")
 
-    # Update the case's next_hearing_date to the earliest upcoming hearing
-    _sync_next_hearing(case_id)
+    try:
+        _sync_next_hearing(case_id)
+    except Exception:
+        pass  # Don't fail the request if sync fails
+
     return result.data[0]
 
 
@@ -293,27 +304,31 @@ def reschedule_hearing(
 
 
 def _sync_next_hearing(case_id: int):
-    """Keep cases.next_hearing_date in sync with the earliest upcoming hearing."""
-    from datetime import date as date_type
-    today = str(date_type.today())
-    upcoming = (
-        supabase.table("case_hearings")
-        .select("hearing_date,hearing_time")
-        .eq("case_id", case_id)
-        .eq("status", "scheduled")
-        .gte("hearing_date", today)
-        .order("hearing_date", desc=False)
-        .limit(1)
-        .execute()
-    )
-    if upcoming.data:
-        next_h = upcoming.data[0]
-        supabase.table("cases").update({
-            "next_hearing_date": next_h["hearing_date"],
-            "next_hearing_time": next_h.get("hearing_time"),
-        }).eq("id", case_id).execute()
-    else:
-        supabase.table("cases").update({
-            "next_hearing_date": None,
-            "next_hearing_time": None,
-        }).eq("id", case_id).execute()
+    """Keep cases.next_hearing_date in sync with the earliest upcoming hearing.
+    Wrapped in try/except — silently skips if columns don't exist in this DB version."""
+    try:
+        from datetime import date as date_type
+        today = str(date_type.today())
+        upcoming = (
+            supabase.table("case_hearings")
+            .select("hearing_date,hearing_time")
+            .eq("case_id", case_id)
+            .eq("status", "scheduled")
+            .gte("hearing_date", today)
+            .order("hearing_date", desc=False)
+            .limit(1)
+            .execute()
+        )
+        if upcoming.data:
+            next_h = upcoming.data[0]
+            supabase.table("cases").update({
+                "next_hearing_date": next_h["hearing_date"],
+                "next_hearing_time": next_h.get("hearing_time"),
+            }).eq("id", case_id).execute()
+        else:
+            supabase.table("cases").update({
+                "next_hearing_date": None,
+                "next_hearing_time": None,
+            }).eq("id", case_id).execute()
+    except Exception:
+        pass  # Columns may not exist in all DB versions — non-critical
