@@ -38,27 +38,9 @@ ALTER TABLE case_hearings
     'postponed'
   ));
 
--- 4. Migrate existing hearing data from cases table to case_hearings
-INSERT INTO case_hearings (case_id, hearing_date, hearing_time, court, judge, status, created_at)
-SELECT 
-    id as case_id,
-    next_hearing_date as hearing_date,
-    next_hearing_time as hearing_time,
-    court,
-    judge,
-    CASE 
-        WHEN next_hearing_date IS NULL THEN NULL
-        ELSE 'scheduled'
-    END as status,
-    created_at
-FROM cases
-WHERE next_hearing_date IS NOT NULL;
-
--- 5. Remove redundant hearing date/time columns from cases table
+-- 4. Note: Data migration skipped - next_hearing_date and next_hearing_time columns already removed from cases table
 -- Note: court and judge are kept as case-level attributes (primary court/judge for the case)
 -- Individual hearings can have different court/judge if needed
-ALTER TABLE cases DROP COLUMN IF EXISTS next_hearing_date;
-ALTER TABLE cases DROP COLUMN IF EXISTS next_hearing_time;
 
 -- 6. (Optional) Add a computed column for next_upcoming_hearing
 -- This keeps a reference to the next scheduled hearing for quick access

@@ -8,7 +8,7 @@ import auth as auth_utils
 router = APIRouter(prefix="/api/cases", tags=["Cases"])
 
 # List view excludes description — kept in detail endpoint
-_CASE_LIST_COLS = "id,case_number,case_name,case_type,status,client_id,attorney_id,next_hearing_date,next_hearing_time,court,judge,filed_date,closed_date,created_at"
+_CASE_LIST_COLS = "id,case_number,case_name,case_type,status,client_id,attorney_id,court,judge,filed_date,closed_date,created_at"
 
 
 @router.post("", response_model=schemas.CaseOut, summary="Create a new case (admin/attorney)")
@@ -27,8 +27,6 @@ def create_case(
         "status": case.status or "open",
         "client_id": case.client_id,
         "attorney_id": case.attorney_id,
-        "next_hearing_date": str(case.next_hearing_date) if case.next_hearing_date else None,
-        "next_hearing_time": case.next_hearing_time,
         "court": case.court,
         "judge": case.judge,
         "filed_date": str(case.filed_date) if case.filed_date else None,
@@ -48,7 +46,7 @@ def get_cases(
 ):
     import math
     role = current_user.get("role", "client")
-    cols = "id,case_number,case_name,case_type,status,client_id,attorney_id,next_hearing_date,next_hearing_time,court,judge,filed_date,closed_date,created_at"
+    cols = "id,case_number,case_name,case_type,status,client_id,attorney_id,court,judge,filed_date,closed_date,created_at"
 
     # Count query
     count_q = supabase.table("cases").select("id", count="exact")
@@ -117,7 +115,7 @@ def update_case(
         raise HTTPException(status_code=403, detail="Only attorneys or admins can update cases")
 
     update_data = {k: v for k, v in body.model_dump().items() if v is not None}
-    for date_field in ("next_hearing_date", "closed_date"):
+    for date_field in ("closed_date",):
         if date_field in update_data and update_data[date_field]:
             update_data[date_field] = str(update_data[date_field])
 

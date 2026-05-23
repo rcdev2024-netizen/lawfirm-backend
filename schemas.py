@@ -314,8 +314,6 @@ class CaseCreate(BaseModel):
     status: Optional[str] = "open"
     client_id: Optional[int] = None
     attorney_id: Optional[int] = None
-    next_hearing_date: Optional[date] = None
-    next_hearing_time: Optional[str] = None
     court: Optional[str] = None
     judge: Optional[str] = None
     filed_date: Optional[date] = None
@@ -328,8 +326,6 @@ class CaseUpdate(BaseModel):
     status: Optional[str] = None
     client_id: Optional[int] = None
     attorney_id: Optional[int] = None
-    next_hearing_date: Optional[date] = None
-    next_hearing_time: Optional[str] = None
     court: Optional[str] = None
     judge: Optional[str] = None
     closed_date: Optional[date] = None
@@ -344,8 +340,6 @@ class CaseOut(BaseModel):
     status: str
     client_id: Optional[int] = None
     attorney_id: Optional[int] = None
-    next_hearing_date: Optional[date] = None
-    next_hearing_time: Optional[str] = None
     court: Optional[str] = None
     judge: Optional[str] = None
     filed_date: Optional[date] = None
@@ -367,8 +361,6 @@ class CaseWithNamesOut(BaseModel):
     client_name: Optional[str] = None
     attorney_id: Optional[int] = None
     attorney_name: Optional[str] = None
-    next_hearing_date: Optional[date] = None
-    next_hearing_time: Optional[str] = None
     court: Optional[str] = None
     judge: Optional[str] = None
     filed_date: Optional[date] = None
