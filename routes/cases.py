@@ -68,6 +68,20 @@ def get_cases(
         query = query.eq("status", case_status)
 
     items = query.execute().data or []
+    
+    # Enrich with client and attorney names/photos
+    for item in items:
+        if item.get("client_id"):
+            client = supabase.table("clients").select("full_name,profile_photo_url").eq("id", item["client_id"]).execute()
+            if client.data:
+                item["client_name"] = client.data[0].get("full_name")
+                item["client_photo_url"] = client.data[0].get("profile_photo_url")
+        if item.get("attorney_id"):
+            attorney = supabase.table("users").select("full_name,avatar_url").eq("id", item["attorney_id"]).execute()
+            if attorney.data:
+                item["attorney_name"] = attorney.data[0].get("full_name")
+                item["attorney_photo_url"] = attorney.data[0].get("avatar_url")
+    
     page = (skip // limit) + 1
 
     return {
