@@ -379,6 +379,47 @@ class PaginatedCasesOut(BaseModel):
     pages: int
 
 
+# ── HEARING SCHEMAS ───────────────────────────────────────────────────────────
+
+class HearingCreate(BaseModel):
+    hearing_date: date
+    hearing_time: Optional[str] = None
+    court: Optional[str] = None
+    judge: Optional[str] = None
+    status: Optional[str] = "scheduled"   # scheduled | completed | cancelled | postponed
+    notes: Optional[str] = None
+
+
+class HearingUpdate(BaseModel):
+    hearing_date: Optional[date] = None
+    hearing_time: Optional[str] = None
+    court: Optional[str] = None
+    judge: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class HearingReschedule(BaseModel):
+    new_date: date
+    new_time: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class HearingOut(BaseModel):
+    id: int
+    case_id: int
+    hearing_date: date
+    hearing_time: Optional[str] = None
+    court: Optional[str] = None
+    judge: Optional[str] = None
+    status: str
+    notes: Optional[str] = None
+    rescheduled_from_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
 class PaginatedClientsOut(BaseModel):
     items: List[ClientOut]
     total: int
