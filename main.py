@@ -19,6 +19,12 @@ ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
 
+# For debugging - allow all origins in development
+# TODO: Remove this in production and use ALLOWED_ORIGINS only
+import os
+if os.getenv("ENVIRONMENT") == "development" or os.getenv("DEBUG") == "true":
+    ALLOWED_ORIGINS = ["*"]
+
 app = FastAPI(
     title="Law Firm Portal API",
     description="Law Firm Portal API — client, attorney, and admin dashboards.",
@@ -31,9 +37,10 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Rate limiter registered after CORS
