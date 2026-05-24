@@ -43,6 +43,8 @@ def get_cases(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     case_status: Optional[str] = Query(None, alias="status"),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     current_user: dict = Depends(auth_utils.get_current_user)
 ):
     role = current_user.get("role", "client")
@@ -56,6 +58,10 @@ def get_cases(
         count_q = count_q.eq("attorney_id", current_user["id"])
     if case_status:
         count_q = count_q.eq("status", case_status)
+    if date_from:
+        count_q = count_q.gte("filed_date", date_from)
+    if date_to:
+        count_q = count_q.lte("filed_date", date_to)
     total = count_q.execute().count or 0
 
     # Data query
@@ -66,6 +72,10 @@ def get_cases(
         query = query.eq("attorney_id", current_user["id"])
     if case_status:
         query = query.eq("status", case_status)
+    if date_from:
+        query = query.gte("filed_date", date_from)
+    if date_to:
+        query = query.lte("filed_date", date_to)
 
     items = query.execute().data or []
 
