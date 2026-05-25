@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, Query
+﻿from fastapi import APIRouter, Depends, Query, HTTPException
 from database import supabase
 import schemas
 import auth as auth_utils
@@ -10,8 +10,13 @@ router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 
 @router.get("/stats", response_model=schemas.DashboardStats, summary="Get dashboard stats for current user")
-def get_dashboard_stats(current_user: dict = Depends(auth_utils.get_current_user)):
-    uid = current_user["id"]
+def get_dashboard_stats(
+    user_id: Optional[int] = Query(None, description="Get stats for a specific user (admin only)"),
+    current_user: dict = Depends(auth_utils.get_current_user)
+):
+    if user_id and current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can view stats for other users")
+    uid = user_id if user_id else current_user["id"]
     role = current_user.get("role", "client")
 
     try:
