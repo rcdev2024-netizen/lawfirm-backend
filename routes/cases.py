@@ -5,11 +5,86 @@ from database import supabase
 import schemas
 import auth as auth_utils
 import math
+from datetime import date
 
 router = APIRouter(prefix="/api/cases", tags=["Cases"])
 
 # List view excludes description — kept in detail endpoint
 _CASE_LIST_COLS = "id,case_number,case_name,case_type,status,client_id,attorney_id,court,judge,filed_date,closed_date,created_at"
+
+
+def _sync_dashboard_stats(user_id: int, role: str):
+    """Update dashboard_stats table for a specific user."""
+    try:
+        # Compute stats for the user
+        if role == "client":
+            cases_res = supabase.table("cases").select("id,status").eq("client_id", user_id).execute()
+        elif role == "attorney":
+            cases_res = supabase.table("cases").select("id,status").eq("attorney_id", user_id).execute()
+        else:
+            cases_res = supabase.table("cases").select("id,status").execute()
+
+        all_cases = cases_res.data or []
+        total_cases = len(all_cases)
+        cases_in_progress = sum(1 for c in all_cases if c.get("status") == "in_progress")
+        cases_review = sum(1 for c in all_cases if c.get("status") == "review")
+        cases_closed = sum(1 for c in all_cases if c.get("status") == "closed")
+        cases_open = sum(1 for c in all_cases if c.get("status") == "open")
+        active_cases = cases_in_progress + cases_review + cases_open
+
+        today = str(date.today())
+        if role == "client":
+            r = supabase.table("appointments").select("id", count="exact").eq("user_id", user_id).eq("status", "confirmed").gte("preferred_date", today).execute()
+            upcoming_appointments = r.count or 0
+            case_ids = [c["id"] for c in all_cases]
+            if case_ids:
+                r = supabase.table("documents").select("id", count="exact").in_("case_id", case_ids).execute()
+                total_documents = r.count or 0
+            else:
+                total_documents = 0
+            r = supabase.table("invoices").select("id", count="exact").eq("client_id", user_id).eq("status", "unpaid").execute()
+            unpaid_invoices = r.count or 0
+        elif role == "attorney":
+            r = supabase.table("appointments").select("id", count="exact").eq("attorney_id", user_id).eq("status", "confirmed").gte("preferred_date", today).execute()
+            upcoming_appointments = r.count or 0
+            total_documents = 0
+            unpaid_invoices = 0
+        else:
+            r = supabase.table("appointments").select("id", count="exact").eq("status", "confirmed").gte("preferred_date", today).execute()
+            upcoming_appointments = r.count or 0
+            r = supabase.table("documents").select("id", count="exact").execute()
+            total_documents = r.count or 0
+            r = supabase.table("invoices").select("id", count="exact").eq("status", "unpaid").execute()
+            unpaid_invoices = r.count or 0
+
+        r = supabase.table("messages").select("id", count="exact").eq("recipient_id", user_id).eq("is_read", False).execute()
+        unread_messages = r.count or 0
+        r = supabase.table("notifications").select("id", count="exact").eq("user_id", user_id).eq("is_read", False).execute()
+        unread_notifications = r.count or 0
+
+        # Update or insert dashboard_stats
+        stats_data = {
+            "active_cases": active_cases,
+            "total_cases": total_cases,
+            "cases_open": cases_open,
+            "cases_in_progress": cases_in_progress,
+            "cases_review": cases_review,
+            "cases_closed": cases_closed,
+            "upcoming_appointments": upcoming_appointments,
+            "unpaid_invoices": unpaid_invoices,
+            "total_documents": total_documents,
+            "unread_messages": unread_messages,
+            "unread_notifications": unread_notifications,
+        }
+
+        existing = supabase.table("dashboard_stats").select("id").eq("user_id", user_id).execute()
+        if existing.data:
+            supabase.table("dashboard_stats").update(stats_data).eq("user_id", user_id).execute()
+        else:
+            stats_data["user_id"] = user_id
+            supabase.table("dashboard_stats").insert(stats_data).execute()
+    except Exception:
+        pass  # Don't fail the main operation if stats sync fails
 
 
 @router.post("", response_model=schemas.CaseOut, summary="Create a new case (admin/attorney)")
@@ -35,6 +110,13 @@ def create_case(
     result = supabase.table("cases").insert(data).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create case")
+    
+    # Sync dashboard_stats for client and attorney
+    if case.client_id:
+        _sync_dashboard_stats(case.client_id, "client")
+    if case.attorney_id:
+        _sync_dashboard_stats(case.attorney_id, "attorney")
+    
     return result.data[0]
 
 
@@ -153,6 +235,14 @@ def update_case(
     result = supabase.table("cases").update(update_data).eq("id", case_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Case not found")
+    
+    # Sync dashboard_stats for client and attorney
+    updated_case = result.data[0]
+    if updated_case.get("client_id"):
+        _sync_dashboard_stats(updated_case["client_id"], "client")
+    if updated_case.get("attorney_id"):
+        _sync_dashboard_stats(updated_case["attorney_id"], "attorney")
+    
     return result.data[0]
 
 
@@ -160,9 +250,23 @@ def update_case(
 def delete_case(case_id: int, current_user: dict = Depends(auth_utils.get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Only admins can delete cases")
+    
+    # Get case details before deletion to sync stats
+    case_result = supabase.table("cases").select("client_id,attorney_id").eq("id", case_id).execute()
+    if not case_result.data:
+        raise HTTPException(status_code=404, detail="Case not found")
+    case = case_result.data[0]
+    
     result = supabase.table("cases").delete().eq("id", case_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Case not found")
+    
+    # Sync dashboard_stats for client and attorney
+    if case.get("client_id"):
+        _sync_dashboard_stats(case["client_id"], "client")
+    if case.get("attorney_id"):
+        _sync_dashboard_stats(case["attorney_id"], "attorney")
+    
     return {"message": f"Case {case_id} deleted successfully"}
 
 
